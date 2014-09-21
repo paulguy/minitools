@@ -1,0 +1,27 @@
+Intro
+-----
+
+Currently small collection of random tools I've written that may be useful to others.
+
+They're mostly for my personal use but there's nothing stopping them from working elsewhere and they're reasonably 
+stable, but may not catch all possible error states or sanitize input, so be careful when processing untrusted 
+data.  They'll all likely be command line programs so make sure you know how to use a command line, but some are 
+simple as running in the same directory or you could even just drag a file in to it.
+
+Python scripts may require at least python 3.x unless otherwise noted.
+
+
+Tools Included
+--------------
+extoggs.py
+Extracts OGG Vorbis files from Blockland's cache.db.  Just run it to get information on using it.
+
+dc2iso.py
+Reads a GDI file and outputs a ISO.  Specifically designed to work with Dreamcast images, though hasn't been widely 
+tested so might not work on all images or ones with oddball protections.  Files output with this utility won't work 
+immediately, however, they may need their LBA fixed.  Requires python 3.4.
+
+fixlba.py
+Takes an ISO file and an LBA offset and adjusts all pointers within the file.  LBA can be adjusted forward or 
+backward with a negative argument.  Paired with the previous program, you can make mountable Dreamcast images that 
+you can browse with any file manager.
