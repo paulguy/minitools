@@ -86,8 +86,8 @@ def monotonicTracks(tracks):
 
 
 def ascendingTrackBlocks(tracks):
-  for track in enumerate(tracks[:-1]):
-    if tracks[track[0]+1]['blkpos'] <= tracks[track[0]]['blkpos']:
+  for track in range(0, len(tracks) -1):
+    if tracks[track+1]['blkpos'] <= tracks[track]['blkpos']:
       return False
 
   return True
