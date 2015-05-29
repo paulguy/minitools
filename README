@@ -1,12 +1,15 @@
 Intro
 -----
 
-Currently small collection of random tools I've written that may be useful to others.
+Currently small collection of random tools I've written that may be useful to
+others.
 
-They're mostly for my personal use but there's nothing stopping them from working elsewhere and they're reasonably 
-stable, but may not catch all possible error states or sanitize input, so be careful when processing untrusted 
-data.  They'll all likely be command line programs so make sure you know how to use a command line, but some are 
-simple as running in the same directory or you could even just drag a file in to it.
+They're mostly for my personal use but there's nothing stopping them from
+working elsewhere and they're reasonably stable, but may not catch all possible
+error states or sanitize input, so be careful when processing untrusted data.
+They'll all likely be command line programs so make sure you know how to use a
+command line, but some are simple as running in the same directory or you could
+even just drag a file in to it.
 
 Python scripts may require at least python 3.x unless otherwise noted.
 
@@ -14,28 +17,34 @@ Python scripts may require at least python 3.x unless otherwise noted.
 Tools Included
 --------------
 extoggs.py
-  Extracts OGG Vorbis files from Blockland's cache.db.  Just run it to get information on using it.
+  Extracts OGG Vorbis files from Blockland's cache.db.  Just run it to get
+  information on using it.
 
 dc2iso.py
-  Reads a GDI file and outputs a ISO.  Specifically designed to work with Dreamcast images, though hasn't been 
-  widely tested so might not work on all images or ones with oddball protections.  Files output with this utility
-  won't work immediately, however, they may need their LBA fixed.  Requires python 3.4.
+  Reads a GDI file and outputs a ISO.  Specifically designed to work with
+  Dreamcast images, though hasn't been widely tested so might not work on all
+  images or ones with oddball protections.  Files output with this utility won't
+  work immediately, however, they may need their LBA fixed.  Requires python 3.4.
 
 fixlba.py
-  Takes an ISO file and an LBA offset and adjusts all pointers within the file.  LBA can be adjusted forward or 
-  backward with a negative argument.  Paired with the previous program, you can make mountable Dreamcast images
-  that you can browse with any file manager.
+  Takes an ISO file and an LBA offset and adjusts all pointers within the file.
+  LBA can be adjusted forward or backward with a negative argument.  Paired with
+  the previous program, you can make mountable Dreamcast images that you can
+  browse with any file manager.
 
 unscale
-  Graphical utility to help with unscaling a scaled image.  Not very useful, just a little experiment I worked on
-  to see about recovering an approximate image of retro gaming footage from videos or screenshots that have been
-  scaled up.  Seems to mostly work well with hugely upscaled images (low res 256x224 -> 720p/1080p), not likely
-  to work well with lesser scale factors.  Only takes BMP, requires SDL 1.2.  TIP: You might lose a pixel on each
-  side.
+  Graphical utility to help with unscaling a scaled image.  Not very useful,
+  just a little experiment I worked on to see about recovering an approximate
+  image of retro gaming footage from videos or screenshots that have been scaled
+  up.  Seems to mostly work well with hugely upscaled images
+  (low res 256x224 -> 720p/1080p), not likely to work well with lesser scale
+  factors.  Only takes BMP, requires SDL 1.2.  TIP: You might lose a pixel on
+  each side.
 
   usage: unscale filename.bmp [xsize [ysize [destw [desth]]]]
     xsize, ysize - initial window size, window is resizable at runtime
-    destw, desth - initial destination surface size, how large you think the original image may be
+    destw, desth - initial destination surface size, how large you think the
+                   original image may be
 
   Controls:
     Q          - quit and print final params
@@ -51,12 +60,23 @@ unscale
     Left,Right - adjust display horizontal scale
 
   Sampling Mode
-    This program will only do nearest neighbor scaling so unless that's what you want, it's not intended to be
-    your final output.  The intention is to take the parameters you got from this program and feed it in to
-    another program with more capable scalers.  However, different programs will sample from different places
-    given the same parameters.  When scaling down an image, a certain amount of pixels are to be stepped over for
-    each result pixel.  Topleft mode starts at the actual source start position every time.  Center mode will
-    start at that position plus half the step required per result pixel, taking the center sample for that result
-    pixel.  If your output looks fuzzy when you pass the parameters to another application, try changing sampling
-    modes and refocusing the image with the WSAD source start adjustments until it looks clear, you shouldn't have
-    to adjust range however you may find that you need to slice off a pixel from each side, then readjust range.
+    This program will only do nearest neighbor scaling so unless that's what you
+    want, it's not intended to be your final output.  The intention is to take
+    the parameters you got from this program and feed it in to another program
+    with more capable scalers.  However, different programs will sample from
+    different places given the same parameters.  When scaling down an image, a
+    certain amount of pixels are to be stepped over for each result pixel.
+    Topleft mode starts at the actual source start position every time.  Center
+    mode will start at that position plus half the step required per result
+    pixel, taking the center sample for that result pixel.  If your output looks
+    fuzzy when you pass the parameters to another application, try changing
+    sampling modes and refocusing the image with the WSAD source start
+    adjustments until it looks clear, you shouldn't have to adjust range however
+    you may find that you need to slice off a pixel from each side, then 
+    readjust range.
+
+fix_bl_save.py
+  Might help to fix weirdly messed up blockland save files where certain bricks
+  will be offset by 1 in various directions.  Tested and should work with most
+  default bricks.  Doesn't consider any custom bricks.  Uses included 
+  BLSFile.py also written by me.
