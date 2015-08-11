@@ -5,7 +5,7 @@ import re
 
 defaultFont = "Arial"
 opaque = 0
-translucent = 128
+translucent = 127
 transparent = 255
 boxBorders = "000000"
 defaultBorderWidth = 1
@@ -34,11 +34,11 @@ eventKey = "Dialogue: "
 
 def makeASSHeader(width, height):
   return ASSHeader + videoResKeys[0] + str(width) + "\n" + videoResKeys[1] \
-    + str(height) + "\n" + styleHeading + styles + eventsHeading
+    + str(height) + "\n\n" + styleHeading + styles + "\n" + eventsHeading
 
 
 def makeASSEvent(start, end, x, y, text):
-  return eventKey + "0," + start + "," + end + ",def,," + str(x) + ",0," \
+  return eventKey + "1," + start + "," + end + ",def,," + str(x) + ",0," \
     + str(y) + ",," + text + "\n"
 
 
@@ -57,14 +57,14 @@ def eightBitToHex(val):
     return lookup[val / 16] + lookup[val % 16]
 
 
-def makeASSBoxWithStyle(x, y, w, h, bcolor, balpha, bsize, fcolor, falpha):
+def makeASSBoxWithStyle(x, y, w, h, bcolor, balpha, bsize, fcolor, falpha, keepopen=False):
   #set colors and draw a box
-  return "{\\1a&H" + eightBitToHex(falpha) + "\\3a&H" + eightBitToHex(balpha) + "\\1c&H" + fcolor + "\\3c&H" + bcolor + "\\bord" + str(bsize) \
+  return "{\\3a&H" + eightBitToHex(balpha) + "\\1a&H" + eightBitToHex(falpha) + "\\1c&H" + fcolor + "\\3c&H" + bcolor + "\\bord" + str(bsize) \
 	   + "\\p1}" + makeASSBox(x, y, w, h) + "{\\p0}"
 
 
 def makeASSTextWithStyle(text, color, size):
-  return "{\\c1&H" + color + "\\fs" + str(int(size)) + "}" + text
+  return "{\\1c&H" + color + "\\fs" + str(int(size)) + "}" + text
 
 
 def _getWidth(text, font):
@@ -145,8 +145,8 @@ def annosToASSFile(annos, assfile, width, height):
       elif anno['style'] == 'label': #box with bottom-aligned text, just top align it...
 	alpha = annoAlphaToASSAlpha(anno['bgAlpha'])
 	text = makeASSBoxWithStyle(anno['x'], anno['y'], anno['w'], anno['h'], anno['bgColor'], alpha, defaultBorderWidth, "000000", transparent)
-	assfile.write(makeASSEvent(anno['start'], anno['end'], anno['x'], anno['y'], text))
-	text = "{\\3a00" #turn border back on for readability
+	assfile.write(makeASSEvent(anno['start'], anno['end'], 0, 0, text))
+	text = "{\\3a&H00" #turn border back on for readability
 	if anno['fgColor'] == "000000": # as of this writing, youtube only supports black and white so do simple invert
 	  text += "\\3c&HFFFFFF}"
 	text += makeASSTextWithStyle(anno['text'], anno['fgColor'], anno['textSize'])
@@ -190,7 +190,7 @@ def MSToASSTime(time):
   hours = time / (100 * 60 * 60)
   mins = (time - (hours * 100 * 60 * 60)) / (100 * 60)
   secs = (time - (hours * 100 * 60 * 60) - (mins * 100 * 60)) / 100
-  csecs = time % 99
+  csecs = time % 100
 
   return "%d:%02d:%02d.%02d" % (hours, mins, secs, csecs)
 
@@ -199,12 +199,12 @@ def MSToASSTime(time):
 def RGBIntToBGRHex(color):
   red = color / (256 * 256)
   green = (color - (red * 256 * 256)) / 256
-  blue = color % 255
+  blue = color % 256
 
   return eightBitToHex(blue) + eightBitToHex(green) + eightBitToHex(red)
 
 
-def XMLElementToAnnotationsList(elem):
+def XMLElementToAnnotationsList(elem, width, height):
   annos = list()
   
   if elem.tag != 'document':
@@ -279,10 +279,10 @@ def XMLElementToAnnotationsList(elem):
       anno['sy'] = float(annoregion[0].get('sy'))
     else:
       annoregion = xmlanno.find('segment').find('movingRegion').findall('rectRegion')
-    anno['x'] = float(annoregion[0].get('x')) # location.  all location values seem to be from 0 to 100
-    anno['y'] = float(annoregion[0].get('y')) # 0,0 being top left, 100,100 being bottom right
-    anno['w'] = float(annoregion[0].get('w')) # size
-    anno['h'] = float(annoregion[0].get('h'))
+    anno['x'] = int(float(annoregion[0].get('x')) / 100 * width) # location.  all location values seem to be from 0 to 100
+    anno['y'] = int(float(annoregion[0].get('y')) / 100 * height) # 0,0 being top left, 100,100 being bottom right
+    anno['w'] = int(float(annoregion[0].get('w')) / 100 * width) # size
+    anno['h'] = int(float(annoregion[0].get('h')) / 100 * height)
     anno['start'] = videoTimeToMS(annoregion[0].get('t')) # start and end time in video
     anno['end'] = videoTimeToMS(annoregion[1].get('t'))
     
@@ -310,11 +310,13 @@ def XMLElementToAnnotationsList(elem):
   #sort annotations by start time
   annos.sort(key = lambda x: x['start'])
 
-  #convert times to ASS times h:MM:SS.CC
+  #convert times to ASS times h:MM:SS.CC, scale font heights
   root = Tk()  # have the window open as short a time as possible
   for anno in annos:
     anno['start'] = MSToASSTime(anno['start'])
     anno['end'] = MSToASSTime(anno['end'])
+    if anno['type'] == 'text':
+      anno['textSize'] = anno['textSize'] / 100 * height
 
     #also wrap text.  This part is ugly and requires creating a window
     if anno['type'] == 'text':
@@ -332,6 +334,6 @@ def XMLElementToAnnotationsList(elem):
 
 
 root = getXMLFromFile("test2.xml")
-annos = XMLElementToAnnotationsList(root)
+annos = XMLElementToAnnotationsList(root, 1920, 1080)
 assfile = open("test2.ass", "w")
 annosToASSFile(annos, assfile, 1920, 1080)

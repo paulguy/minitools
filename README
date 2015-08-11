@@ -80,3 +80,17 @@ fix_bl_save.py
   will be offset by 1 in various directions.  Tested and should work with most
   default bricks.  Doesn't consider any custom bricks.  Uses included 
   BLSFile.py also written by me.
+
+ytanno2ass.py
+  Converts a YouTube annotations XML file in to an Aegisub (.ASS) subtitle file
+  for viewing along with a video in a media player.  Has a few issues.  The
+  font width calculation requires a Tk context which opens a window for a brief
+  period.  Translucent or unfilled rectangles don't seem to work.  Not sure if
+  it's a limitation of libass or my syntax is off.  Various effects aren't
+  implemented.  Cards aren't implemented.  Style isn't 100% correct.  Speech
+  bubbles don't have the little triangle pointer thing.  Font metrics don't
+  match those used in the YouTube flash player, nor match those used by the
+  actual subtitle renderer so some wrapping issues will come up.  Otherwise,
+  should more or less work well enough for most YouTube annotations to the
+  degree that they should at least be readable.  Written for Python 2.7, should
+  work in 3.x but untested.
