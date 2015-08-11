@@ -335,5 +335,5 @@ def XMLElementToAnnotationsList(elem, width, height):
 
 root = getXMLFromFile("test2.xml")
 annos = XMLElementToAnnotationsList(root, 1920, 1080)
-assfile = open("test2.ass", "w")
-annosToASSFile(annos, assfile, 1920, 1080)
+with open("test2.ass", "w") as assfile:
+    annosToASSFile(annos, assfile, 1920, 1080)
