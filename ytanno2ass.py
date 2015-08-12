@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 from Tkinter import * #needed for fonts
 import tkFont
 import re
+import sys
 
 defaultFont = "Arial"
 opaque = 0
@@ -37,12 +38,11 @@ def makeASSHeader(width, height):
     + str(height) + "\n\n" + styleHeading + styles + "\n" + eventsHeading
 
 
-def makeASSEvent(start, end, x, y, text):
-  return eventKey + "1," + start + "," + end + ",def,," + str(x) + ",0," \
-    + str(y) + ",," + text + "\n"
+# just place everything at a 0, 0 margin since it doesn't seem to work reliably
+def makeASSEvent(num, start, end, text):
+  return eventKey + str(num) + "," + start + "," + end + ",def,,0,0,0,," + text + "\n"
 
 
-# Boxes are always placed with 0, 0 margin as they place themselves
 def makeASSBox(x, y, w, h):
   # top left -> top right -> bottom right -> bottom left -> return to top left
   return "m " + str(x) + " " + str(y) \
@@ -63,8 +63,8 @@ def makeASSBoxWithStyle(x, y, w, h, bcolor, balpha, bsize, fcolor, falpha, keepo
 	   + "\\p1}" + makeASSBox(x, y, w, h) + "{\\p0}"
 
 
-def makeASSTextWithStyle(text, color, size):
-  return "{\\1c&H" + color + "\\fs" + str(int(size)) + "}" + text
+def makeASSTextWithStyle(text, x, y, color, size,):
+  return "{\\pos(" + str(x) + "," + str(y) + ")\\1c&H" + color + "\\fs" + str(int(size)) + "}" + text
 
 
 def _getWidth(text, font):
@@ -121,36 +121,45 @@ def annoAlphaToASSAlpha(alpha):
 def annosToASSFile(annos, assfile, width, height):
   assfile.write(makeASSHeader(width, height))
   
+  num = 0
   for anno in annos:
     text = ""
     if anno['type'] == 'highlight': #just a box
       text = makeASSBoxWithStyle(anno['x'], anno['y'], anno['w'], anno['h'], anno['bgColor'], translucent, anno['highlightWidth'], "000000", transparent)
-      assfile.write(makeASSEvent(anno['start'], anno['end'], 0, 0, text))
+      assfile.write(makeASSEvent(num, anno['start'], anno['end'], text))
+      num += 1
     elif anno['type'] == 'text':
       if anno['style'] == 'anchored': #a speech bubble with text inside
 	alpha = annoAlphaToASSAlpha(anno['bgAlpha'])
 	text = makeASSBoxWithStyle(anno['x'], anno['y'], anno['w'], anno['h'], boxBorders, opaque, defaultBorderWidth, anno['bgColor'], alpha)
-	assfile.write(makeASSEvent(anno['start'], anno['end'], 0, 0, text))
-	text = makeASSTextWithStyle(anno['text'], anno['fgColor'], anno['textSize'])
-	assfile.write(makeASSEvent(anno['start'], anno['end'], anno['x'], anno['y'], text))
+	assfile.write(makeASSEvent(num, anno['start'], anno['end'], text))
+	num += 1
+	text = makeASSTextWithStyle(anno['text'], anno['x'], anno['y'], anno['fgColor'], anno['textSize'])
+	assfile.write(makeASSEvent(num, anno['start'], anno['end'], text))
+	num += 1
       elif anno['style'] == 'popup': #box with text
 	alpha = annoAlphaToASSAlpha(anno['bgAlpha'])
 	text = makeASSBoxWithStyle(anno['x'], anno['y'], anno['w'], anno['h'], boxBorders, opaque, defaultBorderWidth, anno['bgColor'], alpha)
-	assfile.write(makeASSEvent(anno['start'], anno['end'], 0, 0, text))
-	text = makeASSTextWithStyle(anno['text'], anno['fgColor'], anno['textSize'])
-	assfile.write(makeASSEvent(anno['start'], anno['end'], anno['x'], anno['y'], text))
+	assfile.write(makeASSEvent(num, anno['start'], anno['end'], text))
+	num += 1
+	text = makeASSTextWithStyle(anno['text'], anno['x'], anno['y'], anno['fgColor'], anno['textSize'])
+	assfile.write(makeASSEvent(num, anno['start'], anno['end'], text))
+	num += 1
       elif anno['style'] == 'title' or anno['style'] == 'highlightText': #just text
-	text = makeASSTextWithStyle(anno['text'], anno['fgColor'], anno['textSize'])
-	assfile.write(makeASSEvent(anno['start'], anno['end'], anno['x'], anno['y'], text))
+	text = makeASSTextWithStyle(anno['text'], anno['x'], anno['y'], anno['fgColor'], anno['textSize'])
+	assfile.write(makeASSEvent(num, anno['start'], anno['end'], text))
+	num += 1
       elif anno['style'] == 'label': #box with bottom-aligned text, just top align it...
 	alpha = annoAlphaToASSAlpha(anno['bgAlpha'])
 	text = makeASSBoxWithStyle(anno['x'], anno['y'], anno['w'], anno['h'], anno['bgColor'], alpha, defaultBorderWidth, "000000", transparent)
-	assfile.write(makeASSEvent(anno['start'], anno['end'], 0, 0, text))
+	assfile.write(makeASSEvent(num, anno['start'], anno['end'], text))
+	num += 1
 	text = "{\\3a&H00" #turn border back on for readability
 	if anno['fgColor'] == "000000": # as of this writing, youtube only supports black and white so do simple invert
 	  text += "\\3c&HFFFFFF}"
-	text += makeASSTextWithStyle(anno['text'], anno['fgColor'], anno['textSize'])
-	assfile.write(makeASSEvent(anno['start'], anno['end'], anno['x'], anno['y'], text))
+	text += makeASSTextWithStyle(anno['text'], anno['x'], anno['y'], anno['fgColor'], anno['textSize'])
+	assfile.write(makeASSEvent(num, anno['start'], anno['end'], text))
+	num += 1
       else:
 	raise Exception("Unimplemented annotation style")
     else:
@@ -258,14 +267,16 @@ def XMLElementToAnnotationsList(elem, width, height):
 	anno['bgColor'] = RGBIntToBGRHex(int(appearance.get('fgColor'))) # this may be wrong
 	anno['bgAlpha'] = float(appearance.get('bgAlpha'))
       else:
-	raise Exception("Unsupported style")
+	print("WARNING: Unsupported style \"%s\"" % anno['style'])
+	continue
     elif anno['type'] == 'highlight':
       anno['id'] = xmlanno.get('id') # annotation id, used by highlight
       anno['bgColor'] = RGBIntToBGRHex(int(appearance.get('bgColor')))
       anno['bgAlpha'] = float(appearance.get('borderAlpha'))
       anno['highlightWidth'] = float(appearance.get('highlightWidth'))
     else:
-      raise Exception("Unsupported type")
+      print("WARNING: Unsupported type \"%s\"" % anno['type'])
+      continue
     # effects - bevel, dropshadow, textdropshadow
     # textSize - text height, 100 = video height?
     # fgColor - text color
@@ -332,8 +343,10 @@ def XMLElementToAnnotationsList(elem, width, height):
 
   return annos
 
-
-root = getXMLFromFile("test2.xml")
-annos = XMLElementToAnnotationsList(root, 1920, 1080)
-with open("test2.ass", "w") as assfile:
-    annosToASSFile(annos, assfile, 1920, 1080)
+if len(sys.argv) != 4:
+  print("USAGE: ytanno2ass.py <file> <width> <height>")
+else:
+  root = getXMLFromFile(sys.argv[1])
+  annos = XMLElementToAnnotationsList(root, int(sys.argv[2]), int(sys.argv[3]))
+  with open("%s.ass" % sys.argv[1], "w") as assfile:
+    annosToASSFile(annos, assfile, int(sys.argv[2]), int(sys.argv[3]))
