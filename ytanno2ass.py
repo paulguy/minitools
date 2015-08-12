@@ -11,6 +11,13 @@ transparent = 255
 boxBorders = "000000"
 defaultBorderWidth = 1
 
+#sometimes there's no appearance tag
+speechDefaultEffects = ""
+speechDefaultTextSize = 12 #probably wrong
+speechDefaultFGColor = "000000"
+speechDefaultBGColor = "FFFFFF"
+speechDefaultBGAlpha = 1
+
 # Try experimenting with WrapStyle.  Not super interested in perfect text placement but jsut getting it in the box
 ASSHeader = """[Script Info]
 Title: YouTube Annotations
@@ -25,7 +32,7 @@ styleHeading = """[V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 """
 #size is going to be overridden every time so this value is meaningless.  Font is totally meaningless for purely vector draws
-styles = """Style: def,""" + defaultFont + """,12,&H00000000,&H00000000,&HFF000000,&H00000000,0,0,0,0,100,100,0,0,0,0,2,7,0,0,0,1
+styles = """Style: def,""" + defaultFont + """,12,&H00000000,&H00000000,&HFF000000,&HEE000000,0,0,0,0,100,100,0,0,0,0,2,7,0,0,0,1
 """
 eventsHeading = """[Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -57,14 +64,15 @@ def eightBitToHex(val):
     return lookup[val / 16] + lookup[val % 16]
 
 
+#these return unicode byte arrays for writing to a file
 def makeASSBoxWithStyle(x, y, w, h, bcolor, balpha, bsize, fcolor, falpha, keepopen=False):
   #set colors and draw a box
-  return "{\\3a&H" + eightBitToHex(balpha) + "\\1a&H" + eightBitToHex(falpha) + "\\1c&H" + fcolor + "\\3c&H" + bcolor + "\\bord" + str(bsize) \
-	   + "\\p1}" + makeASSBox(x, y, w, h) + "{\\p0}"
+  return ("{\\3a&H" + eightBitToHex(balpha) + "\\1a&H" + eightBitToHex(falpha) + "\\1c&H" + fcolor + "\\3c&H" + bcolor + "\\bord" + str(bsize) \
+	   + "\\p1}" + makeASSBox(x, y, w, h) + "{\\p0}").encode('utf8', errors='replace')
 
 
 def makeASSTextWithStyle(text, x, y, color, size,):
-  return "{\\pos(" + str(x) + "," + str(y) + ")\\1c&H" + color + "\\fs" + str(int(size)) + "}" + text
+  return ("{\\pos(" + str(x) + "," + str(y) + ")\\1c&H" + color + "\\fs" + str(int(size)) + "}" + text).encode('utf8', errors='replace')
 
 
 def _getWidth(text, font):
@@ -233,7 +241,11 @@ def XMLElementToAnnotationsList(elem, width, height):
     appearance = xmlanno.find('appearance')
 
     if anno['type'] == 'text':
-      anno['text'] = xmlanno.find('TEXT').text # only text types have text.
+      anno['text'] = xmlanno.find('TEXT') # only text types have text.
+      if anno['text'] == None:
+	anno['text'] = ""
+      else:
+	anno['text'] = anno['text'].text
       
       # popup - big ugly box
       # label - box with text at bottom on hover
@@ -246,6 +258,21 @@ def XMLElementToAnnotationsList(elem, width, height):
 	anno['fgColor'] = RGBIntToBGRHex(int(appearance.get('fgColor')))
 	anno['bgColor'] = RGBIntToBGRHex(int(appearance.get('bgColor')))
 	anno['bgAlpha'] = float(appearance.get('bgAlpha'))
+      elif anno['style'] == 'speech': #like an anchored, but may be missing an appearance
+	anno['style'] = 'anchored'
+	if appearance == None:
+	  anno['textSize'] = speechDefaultTextSize
+	  anno['fgColor'] = speechDefaultFGColor
+	  anno['bgColor'] = speechDefaultBGColor
+	  anno['bgAlpha'] = speechDefaultBGAlpha
+	else:
+	  if 'textSize' not in anno:
+	    anno['textSize'] = speechDefaultTextSize
+	  else:
+	    anno['textSize'] = float(appearance.get('textSize'))
+	  anno['fgColor'] = RGBIntToBGRHex(int(appearance.get('fgColor')))
+	  anno['bgColor'] = RGBIntToBGRHex(int(appearance.get('bgColor')))
+	  anno['bgAlpha'] = float(appearance.get('bgAlpha'))
       elif anno['style'] == 'popup':
 	anno['effects'] = appearance.get('effects')
 	anno['textSize'] = float(appearance.get('textSize'))
@@ -301,6 +328,10 @@ def XMLElementToAnnotationsList(elem, width, height):
     if action != None and action.get('type') == 'openUrl': # get URLs to place on link annotations
       anno['link'] = action.find('url').get('value')
     annos.append(anno)
+    
+    print("%s" % anno['type'])
+    if anno['type'] == 'text':
+      print("%s \"%s\"" % (anno['style'], anno['text']))
 
   #resolve highlights and make relative values absolute, copy time to highlightText
   for anno in annos:

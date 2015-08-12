@@ -1,2 +1,5 @@
 *.o
 unscale
+*.xml
+*.ass
+*.mp4
