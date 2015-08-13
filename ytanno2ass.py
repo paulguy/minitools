@@ -1,3 +1,7 @@
+# ytanno2ass.py
+# Paul <paulguy on GitHub>
+# This code is in the public domain
+
 import xml.etree.ElementTree as ET
 from Tkinter import * #needed for fonts
 import tkFont
@@ -75,49 +79,79 @@ def makeASSTextWithStyle(text, x, y, color, size,):
   return ("{\\pos(" + str(x) + "," + str(y) + ")\\1c&H" + color + "\\fs" + str(int(size)) + "}" + text).encode('utf8', errors='replace')
 
 
-def _getWidth(text, font):
-  return (font.measure(text), 0)
-
-
-#from http://code.activestate.com/recipes/577946-word-wrap-for-proportional-fonts/
-def _wordWrap(text, width, extent_func, priv):
-    '''
-    Word wrap function / algorithm for wrapping text using proportional (versus 
-    fixed-width) fonts.
-    
-    `text`: a string of text to wrap
-    `width`: the width in pixels to wrap to
-    `extent_func`: a function that returns a (w, h) tuple given any string, to
-                   specify the size (text extent) of the string when rendered. 
-                   the algorithm only uses the width.
-    
-    Returns a list of strings, one for each line after wrapping.
-    '''
-    lines = []
-    pattern = re.compile(r'(\s+)')
-    lookup = dict((c, extent_func(c, priv)[0]) for c in set(text))
-    for line in text.splitlines():
-        tokens = pattern.split(line)
-        tokens.append('')
-        widths = [sum(lookup[c] for c in token) for token in tokens]
-        start, total = 0, 0
-        for index in xrange(0, len(tokens), 2):
-            if total + widths[index] > width:
-                end = index + 2 if index == start else index
-                lines.append(''.join(tokens[start:end]))
-                start, total = end, 0
-                if end == index + 2:
-                    continue
-            total += widths[index] + widths[index + 1]
-        if start < len(tokens):
-            lines.append(''.join(tokens[start:]))
-    lines = [line.strip() for line in lines]
-    return lines or ['']
-
-
-def wordWrap(text, size, width):
+def wordWrap2(text, size, width):
   font = tkFont.Font(family = defaultFont, size = int(size), weight = tkFont.NORMAL, slant = tkFont.ROMAN)
-  return _wordWrap(text, width, _getWidth, font)
+  lines = list()
+  width *= 2 #awful assumption but seems to help a bit...
+
+  spcwidth = font.measure(" ")
+  wordsl = text.split()
+  
+  words = list()
+  for word in wordsl:
+    words.append((word, font.measure(word)))
+  
+  line = ""
+  linewidth = 0
+  while len(words) > 0:
+    #print(words)
+    if linewidth + words[0][1] <= width:
+      line += words[0][0] # add word to line
+      linewidth += words[0][1]
+      if linewidth + words[0][1] + spcwidth > width: #if a space won't fit, we're at the end
+	linewidth += spcwidth
+	#print(line)
+	lines.append(line) # add the line to the list
+	line = "" # clear the line
+	linewidth = 0
+      else:
+	line += " " # add a space
+      del words[0] # delete the word from the list
+    elif linewidth == 0 and words[0][1] > width: #cut up a too long word to lines
+      #print("too long")
+      minlen = 0 #we start with the entire string being a possibility
+      maxlen = len(words[0][0])
+      curlen = maxlen
+      while True:
+	changed = 0
+	#shrink string in half increments until it fits
+	while font.measure(words[0][0][:curlen]) > width:
+	  changed = 1
+	  maxlen = curlen # string still doesn't fit, so invalidate possibilities that don't fit
+	  if curlen == minlen + 1:
+	    break
+	  curlen -= ((curlen - minlen) / 2) # halfway between min and maximum validated size
+	  #print("%d" % curlen)
+	#at this point, max length is the previous size before the last halving
+	#we've halved the string until it fits, now try growing the string in 1/2 increments between min and max until it's too big
+	#print("%d %d" % (curlen, maxlen))
+	#curlen wasn't greater, so it's the new largest value we know fits
+	while font.measure(words[0][0][:curlen]) < width:
+	  changed = 1
+	  minlen = curlen # string still fits so invalidate possibilities that we know are too short
+	  if curlen == maxlen - 1:
+	    if curlen == 0:
+	      minlen = 1
+	    break
+	  curlen += ((maxlen - curlen) / 2) # halfway between current and max
+	  #print("%d" % curlen)
+	#print("%d %d" % (minlen, curlen))
+	if changed == 0 or minlen == maxlen or minlen + 1 == maxlen: #we've found the length that'll fit
+	  lines.append(words[0][0][:minlen]) # create a line with the head
+	  # replace the original word with the tail
+	  # and find the new length of the tail
+	  tail = (words[0][0][minlen:], font.measure(words[0][0][minlen:]))
+	  words[0] = tail
+	  break #we're done
+    else: # couldn't append next word
+      #print(line)
+      lines.append(line) # add the line to the list
+      line = "" # clear the line
+      linewidth = 0
+  if linewidth != 0:
+    lines.append(line)
+  
+  return lines
 
 
 def annoAlphaToASSAlpha(alpha):
@@ -245,7 +279,7 @@ def XMLElementToAnnotationsList(elem, width, height):
       if anno['text'] == None:
 	anno['text'] = ""
       else:
-	anno['text'] = anno['text'].text
+	anno['text'] = anno['text'].text.splitlines()
       
       # popup - big ugly box
       # label - box with text at bottom on hover
@@ -362,7 +396,10 @@ def XMLElementToAnnotationsList(elem, width, height):
 
     #also wrap text.  This part is ugly and requires creating a window
     if anno['type'] == 'text':
-      anno['text'] = wordWrap(anno['text'], anno['textSize'], anno['w'])
+      lines = list()
+      for text in anno['text']:
+	lines.extend(wordWrap2(text, anno['textSize'], anno['w']))
+      anno['text'] = lines
       
       newtext = ""
       for line in enumerate(anno['text']):
