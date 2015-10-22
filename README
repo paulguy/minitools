@@ -94,3 +94,21 @@ ytanno2ass.py
   should more or less work well enough for most YouTube annotations to the
   degree that they should at least be readable.  Written for Python 2.7, should
   work in 3.x but untested.
+  
+blockland-colorset-tool.py (PaletteCore.py, BLPalette.py, GPLPalette.py)
+  Converts between blockland colorSet.txt and GIMP Palette format for easier
+  editing in something like mtPaint.  Unfortunately, GIMP palette format doesn't
+  store alpha, and is unable to store the palette categories, so an extra file
+  is output along with the GPL file.  If you're going to rearrange colors or
+  change divisions, you should choose not to restore extra data and adjust alpha
+  directly in the colorSet.txt file, or modify the extra data file manually.
+  The format is as follows (all values are ascii alphanumerics):
+  first value is the number of colors
+  following values go for the number of colors, each one is the alpha value of
+  each color in the order they appear in the color set.
+  next value is the number of divisions
+  following values are the locations of the divisions, then after that is the
+  names of the divisions
+  
+  Run the script with the -h or --help parameter to get more information on
+  usage.
