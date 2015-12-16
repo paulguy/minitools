@@ -112,3 +112,8 @@ blockland-colorset-tool.py (PaletteCore.py, BLPalette.py, GPLPalette.py)
   
   Run the script with the -h or --help parameter to get more information on
   usage.
+
+ps3swiz.c
+  Unswizzles textures used in some PS3 game I don't know the name of.  Uses a
+  "nested tile" based swizzle pattern.  Doesn't properly support non-square
+  textures.  If someone wants that working, I can try to look in to it.
