@@ -3,6 +3,8 @@
 #include <string.h>
 #include <wand/MagickWand.h>
 
+#include <sys/time.h>
+
 #define MAXTEXSIZE (65536)
 
 #define ThrowWandException(wand) \
@@ -15,6 +17,11 @@
   (void) fprintf(stderr,"%s %s %lu %s\n", GetMagickModule(), description); \
   description = (char *)MagickRelinquishMemory(description); \
 }
+
+typedef enum {
+  SWIZ_MODE_SWIZ,
+  SWIZ_MODE_UNSWIZ,
+} SwizMode;
 
 int _getSrcPos(int size, int x, int y) {
   //printf("%d %d %d, ", size, x, y);
@@ -69,7 +76,7 @@ int getSrcPos(int width, int height, int x, int y) {
   return(_getSrcPos(width, x, y));
 }
 
-void swiz2(int *in, int *out, int width, int height) {
+void unswiz(int *in, int *out, int width, int height) {
   int x, y, srcpos;
   
   for(y = 0; y < height; y+=4) {
@@ -95,23 +102,62 @@ void swiz2(int *in, int *out, int width, int height) {
   }
 }
 
+void swiz(int *in, int *out, int width, int height) {
+  int x, y, srcpos;
+  
+  for(y = 0; y < height; y+=4) {
+    for(x = 0; x < width; x+=4) {
+      srcpos = getSrcPos(width, height, x, y);
+      out[srcpos] = in[y * width + x];
+      out[srcpos+1] = in[y * width + x + 1];
+      out[srcpos+2] = in[(y + 1) * width + x];
+      out[srcpos+3] = in[(y + 1) * width + x + 1];
+      out[srcpos+4] = in[y * width + x + 2];
+      out[srcpos+5] = in[y * width + x + 1 + 2];
+      out[srcpos+6] = in[(y + 1) * width + x + 2];
+      out[srcpos+7] = in[(y + 1) * width + x + 1 + 2];
+      out[srcpos+8] = in[(y + 2) * width + x];
+      out[srcpos+9] = in[(y + 2) * width + x + 1];
+      out[srcpos+10] = in[(y + 1 + 2) * width + x];
+      out[srcpos+11] = in[(y + 1 + 2) * width + x + 1];
+      out[srcpos+12] = in[(y + 2) * width + x + 2];
+      out[srcpos+13] = in[(y + 2) * width + x + 1 + 2];
+      out[srcpos+14] = in[(y + 1 + 2) * width + x + 2];
+      out[srcpos+15] = in[(y + 1 + 2) * width + x + 1 + 2];
+    }
+  }
+}
+
 int main(int argc, char **argv) {
   MagickBooleanType status;
 
   MagickWand *magick_wand;
   size_t width, height;
   int *srcpixels, *destpixels;
+  SwizMode mode;
   
   unsigned int i;
 
-  if (argc != 3) {
-    (void) fprintf(stdout,"Usage: %s in out\n",argv[0]);
+  if (argc != 4) {
+    fprintf(stderr, "Usage: %s <u|s> in out\n",argv[0]);
     exit(0);
+  }
+  
+  switch(argv[1][0]) {
+    case 'u':
+      mode = SWIZ_MODE_UNSWIZ;
+      break;
+    case 's':
+      mode = SWIZ_MODE_SWIZ;
+      break;
+    default:
+      fprintf(stderr, "First argument must start with 'u' or 's'\n");
+      goto error0;
   }
   
   MagickWandGenesis();
   magick_wand = NewMagickWand();
-  status = MagickReadImage(magick_wand, argv[1]);
+  status = MagickReadImage(magick_wand, argv[2]);
   if (status == MagickFalse) {
     ThrowWandException(magick_wand);
     goto error0;
@@ -158,8 +204,21 @@ int main(int argc, char **argv) {
     goto error1;
   }
 
-  memset(destpixels, 0x80, width * height * 4);
-  swiz2(srcpixels, destpixels, width, height);
+  struct timeval starttime, endtime;
+  
+  gettimeofday(&starttime, NULL);
+  switch(mode) {
+    case SWIZ_MODE_SWIZ:
+      swiz(srcpixels, destpixels, width, height);
+      break;
+    case SWIZ_MODE_UNSWIZ:
+      unswiz(srcpixels, destpixels, width, height);
+      break;
+  }
+  gettimeofday(&endtime, NULL);
+  printf("Took %ld milliseconds.\n",
+         (endtime.tv_sec * 1000 + endtime.tv_usec / 1000) -
+         (starttime.tv_sec * 1000 + starttime.tv_usec / 1000));
 
   // insert it back in and save.
   status = MagickImportImagePixels(magick_wand, 0, 0, width, height, "RGBA", CharPixel, destpixels);
@@ -168,7 +227,7 @@ int main(int argc, char **argv) {
     goto error1;
   }
 
-  status = MagickWriteImages(magick_wand, argv[2], MagickTrue);
+  status = MagickWriteImages(magick_wand, argv[3], MagickTrue);
   if(status == MagickFalse) {
     ThrowWandException(magick_wand);
     goto error1;

@@ -123,5 +123,7 @@ ps3swiz.c
     -ggdb -o ps3swiz ps3swiz.c
 
   usage:
-    $ ./ps3swiz inputfile outputfile
+    $ ./ps3swiz <u|s> inputfile outputfile
+    
+    'u' will unswizzle, 's' will swizzle.
 
