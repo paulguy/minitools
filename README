@@ -117,3 +117,11 @@ ps3swiz.c
   Unswizzles textures used in some PS3 game I don't know the name of.  Uses a
   "nested tile" based swizzle pattern.  Doesn't properly support non-square
   textures.  If someone wants that working, I can try to look in to it.
+
+  build with:
+    $ gcc `pkg-config --libs MagickWand` `pkg-config --cflags MagickWand` \
+    -ggdb -o ps3swiz ps3swiz.c
+
+  usage:
+    $ ./ps3swiz inputfile outputfile
+

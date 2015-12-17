@@ -18,8 +18,7 @@
 
 int _getSrcPos(int size, int x, int y) {
   //printf("%d %d %d, ", size, x, y);
-/* This code is never reached
-  if(size == 2) {
+/*  if(size == 2) {
     if(x == 0) {
       if(y == 0) {
         return(0); // 0, 0
@@ -34,7 +33,7 @@ int _getSrcPos(int size, int x, int y) {
     return(3); // 1, 1
   }
 */
-  if(size == 2)
+  if(size == 4)
     return(0);
 
   if(x < size / 2) {
@@ -70,39 +69,29 @@ int getSrcPos(int width, int height, int x, int y) {
   return(_getSrcPos(width, x, y));
 }
 
-void _swiz(int *in, int *out, int x, int y, int width, int height, int tilesize) {
-  int srcpos;
-    
-  if(tilesize == 2) {
-    srcpos = getSrcPos(width, height, x, y);
-    //printf("%d,%d=%d\n", x, y, srcpos);
-    out[y * width + x] = in[srcpos];
-    out[y * width + x + 1] = in[srcpos+1];
-    out[(y + 1) * width + x] = in[srcpos+2];
-    out[(y + 1) * width + x + 1] = in[srcpos+3];
-  } else {
-    _swiz(in, out, x, y, width, height, tilesize / 2);
-    _swiz(in, out, x + (tilesize / 2), y, width, height, tilesize / 2);
-    _swiz(in, out, x, y + (tilesize / 2), width, height, tilesize / 2);
-    _swiz(in, out, x + (tilesize / 2), y + (tilesize / 2), width, height, tilesize / 2);
-  }
-}
-
-void swiz(int *in, int *out, int width, int height) {
-  int blocks, i;
-
-  if(width > height) { // wide
-    blocks = width / height;
-    for(i = 0; i < blocks; i++) {
-      _swiz(in, out, i * height, 0, width, height, height);
+void swiz2(int *in, int *out, int width, int height) {
+  int x, y, srcpos;
+  
+  for(y = 0; y < height; y+=4) {
+    for(x = 0; x < width; x+=4) {
+      srcpos = getSrcPos(width, height, x, y);
+      out[y * width + x] = in[srcpos];
+      out[y * width + x + 1] = in[srcpos+1];
+      out[(y + 1) * width + x] = in[srcpos+2];
+      out[(y + 1) * width + x + 1] = in[srcpos+3];
+      out[y * width + x + 2] = in[srcpos+4];
+      out[y * width + x + 1 + 2] = in[srcpos+5];
+      out[(y + 1) * width + x + 2] = in[srcpos+6];
+      out[(y + 1) * width + x + 1 + 2] = in[srcpos+7];
+      out[(y + 2) * width + x] = in[srcpos+8];
+      out[(y + 2) * width + x + 1] = in[srcpos+9];
+      out[(y + 1 + 2) * width + x] = in[srcpos+10];
+      out[(y + 1 + 2) * width + x + 1] = in[srcpos+11];
+      out[(y + 2) * width + x + 2] = in[srcpos+12];
+      out[(y + 2) * width + x + 1 + 2] = in[srcpos+13];
+      out[(y + 1 + 2) * width + x + 2] = in[srcpos+14];
+      out[(y + 1 + 2) * width + x + 1 + 2] = in[srcpos+15];
     }
-  } else if(width < height) { // tall
-    blocks = height / width;
-    for(i = 0; i < blocks; i++) {
-      _swiz(in, out, 0, i * width, width, height, width);
-    }
-  } else { // square
-    _swiz(in, out, 0, 0, width, height, width);
   }
 }
 
@@ -170,7 +159,7 @@ int main(int argc, char **argv) {
   }
 
   memset(destpixels, 0x80, width * height * 4);
-  swiz(srcpixels, destpixels, width, height);
+  swiz2(srcpixels, destpixels, width, height);
 
   // insert it back in and save.
   status = MagickImportImagePixels(magick_wand, 0, 0, width, height, "RGBA", CharPixel, destpixels);
