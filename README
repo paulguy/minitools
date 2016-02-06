@@ -127,3 +127,15 @@ ps3swiz.c
     
     'u' will unswizzle, 's' will swizzle.
 
+rsfgen.py, extractcci.sh, makecia.sh
+  Tools utilizing ctrtool and makerom from Project CTR to assist in converting
+  dumped 3DS cartridges in to CIA packages.  The makecia.sh and extractcci.sh
+  scripts are just examples of usage.  They need to be improved to be made more
+  universal.  rsfgen.py probably needs python 3.2 or greater.
+  
+  usage:
+  $ python rsfgen.py path/to/image.cci path/to/exheader.bin
+  
+  RSF file will be output to stdout.  You can use whatever your shell provides
+  to pipe that to a file (usually the '>' operator) or just copy and paste to a
+  text file.
