@@ -928,14 +928,14 @@ parser.add_argument('--option', metavar="<Category/Name{,+,.#}=Value>",
                     help="Set a custom value.  No checking for validity is " \
                     "done, so this will allow you to create unacceptable RSF " \
                     "files.  This can override existing values or add new " \
-                    "ones.  New categories will also be added automatically." \
+                    "ones.  New categories will also be added automatically. " \
                     "List values can be specified by adding a point '.' and " \
                     "a list index after the name.  You can also use the " \
                     "special value '+' instead of '.' to just append a " \
                     "value.  If you want to create a new list, you need to " \
-                    "create it using the list syntax.  Values will not be " \
-                    "reformatted in any way and always written verbatim as " \
-                    "given.")
+                    "create it using the list append syntax.  Values will " \
+                    "not be reformatted in any way and always written " \
+                    "verbatim as given.")
 parser.add_argument('--deloption', metavar="<Category/Name{,.#,-}>",
                     type=str, action='append',
                     help="Delete a category, item or list item.  Same naming " \
