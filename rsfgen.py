@@ -183,6 +183,13 @@ rsffile = {
   }
 }
 
+# Lists that require there to not be a dash
+specialLists = [
+  'AccessControlInfo/SystemCallAccess',
+  'SystemControlInfo/Dependency'
+]
+
+
 # NOTE: TitleInfo is all from the Program ID field in the NCCH header
 # Version, ContentsIndex, Variation, ChildIndex and DemoIndex all are the
 # "Variation" byte in different contexts.  None of them do anything for
@@ -765,6 +772,129 @@ def reformatData():
     "0x%0.6X" % rsffile['TitleInfo']['UniqueId']
 
 
+def keyString(category, name):
+  return("%s/%s" % (category, name))
+
+
+def splitKeyValue(kv):
+  equal = kv.index('=')
+  if equal == 0 or equal == -1:
+    raise ValueError
+  return({'key': kv[:equal], 'value': kv[equal+1:]})
+
+
+def splitKeyString(ks):
+  slash = ks.find('/')
+  if slash == 0 or slash + 1 == len(ks):
+    raise ValueError
+  if slash == -1:
+    return({'category': ks})
+  return({'category': ks[:slash], 'name': ks[slash+1:]})
+
+
+def listTypes(listtypes):
+  print(repr(specialLists))
+  for item in listtypes:
+    listtype = splitKeyValue(item)
+
+    if listtype['value'] == 'nodash':
+      if listtype['key'] in specialLists:
+        raise ValueError("%s is already set to nodash" % listtype['key'])
+      else:
+        specialLists.append(listtype['key'])
+    elif listtype['value'] == 'dash':
+      if listtype['key'] not in specialLists:
+        raise ValueError("%s is not set to nodash" % listtype['key'])
+      else:
+        specialLists.remove(listtype['key'])
+    else:
+      raise ValueError("List type must be 'dash' or 'nodash'")
+
+
+def getListIndex(key):
+  index = 0
+  dot = key.find('.')
+  
+  if dot == -1:
+    if key[len(key) - 1] == '+':
+      return('add', key[:-1])
+    elif key[len(key) - 1] == '-':
+      return('clear', key[:-1])
+    else:
+      return(None, key)
+  else:
+    if dot == 0 or dot + 1 == len(key):
+      raise ValueError
+    index = int(key[dot+1:])
+    if index < 0:
+      raise ValueError("Negative list index %d" % index)
+  
+  return(index, key[:dot])
+
+
+def delOptions(options):
+  for option in options:
+    kv = splitKeyString(option)
+
+    if 'name' in kv:
+      category = kv['category']
+      index, name = getListIndex(kv['name'])
+      
+      if index == 'add':
+        raise ValueError("'+' operator invalid for '--deloptions'")
+      elif index == 'clear':
+        if type(rsffile[category][name]) is list:
+          rsffile[category][name] = list()
+        else:
+          raise ValueError("%s is not a list" % option)
+      elif index == None:
+        try:
+          del rsffile[category][name]
+        except KeyError as e:
+          raise KeyError("%s doesn't exist" % option)
+      else:
+        del rsffile[category][name][index]
+    else:
+      try:
+        del rsffile[kv['category']]
+      except KeyError as e:
+        raise KeyError("%s isn't a category" % option)
+
+
+def addOptions(options):
+  for option in options:
+    kv = splitKeyValue(option)
+    ks = splitKeyString(kv['key'])
+    
+    if 'name' in ks:
+      category = ks['category']
+      index, name = getListIndex(ks['name'])
+      value = kv['value']
+      
+      if index == 'add':
+        if category not in rsffile:
+          rsffile[category] = dict()
+        if name not in rsffile[category]:
+          rsffile[category][name] = list()
+        if type(rsffile[category][name]) is list:
+          rsffile[category][name].append(value)
+        else:
+          raise KeyError("%s is not a list" % kv['key'])
+      elif index == 'clear':
+        raise KeyError("Can't use assingment with clear")
+      elif index == None:
+        if category not in rsffile:
+          rsffile[category] = dict()
+        elif name in rsffile[category] and type(rsffile[category][name]) is list:
+          raise KeyError("Can't assign to list type, delete list first.")
+        rsffile[category][name] = value
+      else:
+        if type(rsffile[category][name]) is not list:
+          raise KeyError("Can't index non list type")
+        else:
+          rsffile[category][name][index] = value
+
+
 # Not much safeguarding in this, but it's only a problem if you're noodling around
 # Very VERY simple YAML printer
 def writeRSF():
@@ -777,7 +907,7 @@ def writeRSF():
         print("  %s: %d" % (item, rsffile[category][item]))
       elif type(rsffile[category][item]) is list:
         print("  %s:" % (item))
-        if item == 'SystemCallAccess' or item == 'Dependency':
+        if keyString(category, item) in specialLists:
           for value in rsffile[category][item]:
             print("   %s" % (value))
         else:
@@ -785,12 +915,44 @@ def writeRSF():
             print("  - %s" % (value))
 
 
-parser = argparse.ArgumentParser(description="Generate RSF file from 3DS ROM and exheader.")
-parser.add_argument('rom', metavar="<ROM File>", type=str, help="ROM file to read data from.")
-parser.add_argument('exheader', metavar="<ExHeader file>", type=str, help="File containing the ExHeader.")
-parser.add_argument('--romfsdir', metavar="<RomFs dir>", type=str, help="Specify a RomFs path.")
+parser = argparse.ArgumentParser(description="Generate RSF file from 3DS CCI " \
+                                 "and exheader.")
+parser.add_argument('rom', metavar="<CCI File>", type=str, help="ROM file to " \
+                    "read data from.")
+parser.add_argument('exheader', metavar="<ExHeader file>", type=str,
+                    help="File containing the ExHeader.")
+parser.add_argument('--romfsdir', metavar="<RomFs dir>", type=str,
+                    help="Specify a RomFs path.")
+parser.add_argument('--option', metavar="<Category/Name{,+,.#}=Value>",
+                    type=str, action='append',
+                    help="Set a custom value.  No checking for validity is " \
+                    "done, so this will allow you to create unacceptable RSF " \
+                    "files.  This can override existing values or add new " \
+                    "ones.  New categories will also be added automatically." \
+                    "List values can be specified by adding a point '.' and " \
+                    "a list index after the name.  You can also use the " \
+                    "special value '+' instead of '.' to just append a " \
+                    "value.  If you want to create a new list, you need to " \
+                    "create it using the list syntax.  Values will not be " \
+                    "reformatted in any way and always written verbatim as " \
+                    "given.")
+parser.add_argument('--deloption', metavar="<Category/Name{,.#,-}>",
+                    type=str, action='append',
+                    help="Delete a category, item or list item.  Same naming " \
+                    "conventions apply as '--option'.  '-' can be put after " \
+                    "a name to clear a list.  '--deloption' happens before " \
+                    "'--option'.")
+parser.add_argument('--list-type', metavar="<Category/Name={nodash,dash}>",
+                    type=str, action='append',
+                    help="Makerom is kind of weird about certain kinds of " \
+                    "lists where some need the items to begin with dashes " \
+                    "('-'), and some need to be without.  This will Allow " \
+                    "you to change how a list is output if you need to.")
+
 
 args = parser.parse_args()
+if args.list_type != None:
+  listTypes(args.list_type)
 
 with open(args.rom, 'rb') as f:
   ncsdHdr = makeNcsdHdrDictFromTuple(ncsdHdrStruct.unpack(f.read(ncsdHdrStruct.size)))
@@ -808,4 +970,8 @@ else:
   del rsffile['RomFs']
 
 reformatData()
+if args.deloption != None:
+  delOptions(args.deloption)
+if args.option != None:
+  addOptions(args.option)
 writeRSF()
