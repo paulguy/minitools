@@ -9,7 +9,7 @@ _______     _______ _______________
                           __||__     ___     ___    | |     ___
                          `-,  ,-'  ,',-,`, ,',-,`,  | |   ,',--`.
                             ||     | | | | | | | |  | |   \`===,
-                            ||__,. | |_| | | | | |  | `-, .____)|
+                            ||__,. | |_| | | |_| |  | `-, .____)|
                             `---'   `---'   `---'   '----` `---'
 
 
@@ -154,3 +154,17 @@ rsfgen.py, extractcci.sh, makecia.sh
   RSF file will be output to stdout.  You can use whatever your shell provides
   to pipe that to a file (usually the '>' operator) or just copy and paste to a
   text file.
+
+videonow_dec.c, videonow_encode.sh
+  Decode videos ripped from VideoNow discs.  It requires that you concatenate
+  tracks together for features that span across tracks.  Usually works well
+  enough if you concatenate all tracks from a disc in to 1 file.  Playback can
+  be pretty rough due to there being far less redundancy in audio tracks, so
+  make sure you get a perfect rip for best results.  The program will try to
+  resync if there are problems but it can only do so much.
+  
+  The program takes a raw CD audio track in little endian byte order as output
+  by `cdparanoid -Bp` on a little endian platform.
+  
+  The videonow_encode.sh script is just a small example for how to use ffmpeg to
+  encode the videos in to something reasonably watchable.
