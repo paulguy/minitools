@@ -178,8 +178,9 @@ rsffile = {
   }, 'RomFs': {
     'RootPath': '',
   }, 'TitleInfo': {
-    'Category': 'Application',
-    'UniqueId': ''
+    'Category': '',
+    'UniqueId': '',
+    'Platform': ''
   }
 }
 
@@ -189,6 +190,45 @@ specialLists = [
   'SystemControlInfo/Dependency'
 ]
 
+categoryFlags = {
+  'normal':                   0x000,
+  'dlpChild':                 0x001,
+  'demo':                     0x002,
+  'content':                  0x003,
+  'addonContents':            0x004,
+  'patch':                    0x006,
+  'cannotExecution':          0x008,
+  'system':                   0x010,
+  'requireBatchUpdate':       0x020,
+  'notRequireUserApproval':   0x040,
+  'notRequireRightForMount':  0x080,
+  'canSkipConvertJumpId':     0x100
+}
+
+categories = {
+  categoryFlags['normal']: 'Application',
+  categoryFlags['normal'] | categoryFlags['system']: 'SystemApplication',
+  categoryFlags['normal'] | categoryFlags['system'] |
+  categoryFlags['requireBatchUpdate']: 'Applet',
+  categoryFlags['normal'] | categoryFlags['cannotExecution'] |
+    categoryFlags['system'] | categoryFlags['requireBatchUpdate'] |
+    categoryFlags['canSkipConvertJumpId']: 'Firmware',
+  categoryFlags['normal'] | categoryFlags['system'] | categoryFlags['requireBatchUpdate'] |
+    categoryFlags['canSkipConvertJumpId']: 'Base',
+  categoryFlags['dlpChild']: 'DlpChild',
+  categoryFlags['demo']: 'Demo',
+  categoryFlags['content']: 'Contents',
+  categoryFlags['content'] | categoryFlags['cannotExecution'] |
+    categoryFlags['system']: 'SystemContents',
+  categoryFlags['content'] | categoryFlags['cannotExecution'] | categoryFlags['system'] |
+  categoryFlags['notRequireRightForMount']: 'SharedContents',
+  categoryFlags['addonContents'] | categoryFlags['cannotExecution'] |
+    categoryFlags['notRequireRightForMount']: 'AddOnContents',
+  categoryFlags['patch'] | categoryFlags['cannotExecution']: 'Patch',
+  categoryFlags['content'] | categoryFlags['cannotExecution'] |
+    categoryFlags['system'] | categoryFlags['notRequireUserApproval'] |
+    categoryFlags['notRequireRightForMount']: 'AutoUpdateContents'
+}
 
 # NOTE: TitleInfo is all from the Program ID field in the NCCH header
 # Version, ContentsIndex, Variation, ChildIndex and DemoIndex all are the
@@ -431,335 +471,388 @@ def warning(warning):
 
 
 def populateRSFFile():
-  # AccessControlInfo
-  
-  # handle those annoying ARM11 Kernel Capabilities values
-  for caps in accCtrlInfo['kernelcaps']:
-    # InterruptNumbers
-    # each has 4 interrupts packed in, 7 bits each
-    if caps & 0xF0000000 == 0xE0000000:
-      ints = (caps >> 0 & 0x7F, caps >> 7 & 0x7F, caps >> 14 & 0x7F, caps >> 21 & 0x7F)
-      for intr in ints:
-        if intr == 0:
-          break
-        rsffile['AccessControlInfo']['InterruptNumers'].append(intr)
-    # SystemCallAccess
-    # first 3 bits after the descriptor value indicate a group of 24 syscalls
-    # the next 24 bits are a mask for this group.
-    elif caps & 0xF8000000 == 0xF0000000:
-      scstart = (caps >> 24 & 0x7) * 24
-      for sc in enumerate(sysCalls[scstart:scstart+24]):
-        if caps & (1 << sc[0]) != 0:
-          rsffile['AccessControlInfo']['SystemCallAccess']\
-            .append("%s: %d" % (sc[1], scstart + sc[0]))
-    # ReleaseKernelMajor, ReleaseKernelMinor
-    elif caps & 0xFE000000 == 0xFC000000:
-      rsffile['AccessControlInfo']['ReleaseKernelMinor'] = caps >> 0 & 0xFF
-      rsffile['AccessControlInfo']['ReleaseKernelMajor'] = caps >> 8 & 0xFF
-    # HandleTableSize
-    elif caps & 0xFF000000 == 0xFE000000:
-      rsffile['AccessControlInfo']['HandleTableSize'] = caps & 0x7FFFF
-    # DisableDebug, EnableForceDebug, CanWriteSharedPage, CanUsePrivilegedPriority,
-    # CanUseNonAlphabetAndNumber, PermitMainFunctionArgument, CanShareDeviceMemory,
-    # RunnableOnSleep, SpecialMemoryArrange
-    elif caps & 0xFF800000 == 0xFF000000:
-      if caps & 0x1 != 0:
-        rsffile['AccessControlInfo']['DisableDebug'] = 'False'
-      else:
-        rsffile['AccessControlInfo']['DisableDebug'] = 'True'
-      if caps & 0x2 != 0:
-        rsffile['AccessControlInfo']['EnableForceDebug'] = 'True'
-      else:
-        rsffile['AccessControlInfo']['EnableForceDebug'] = 'False'
-      if caps & 0x4 != 0:
-        rsffile['AccessControlInfo']['CanUseNonAlphabetAndNumber'] = 'True'
-      else:
-        rsffile['AccessControlInfo']['CanUseNonAlphabetAndNumber'] = 'False'
-      if caps & 0x8 != 0:
-        rsffile['AccessControlInfo']['CanWriteSharedPage'] = 'True'
-      else:
-        rsffile['AccessControlInfo']['CanWriteSharedPage'] = 'False'
-      if caps & 0x10 != 0:
-        rsffile['AccessControlInfo']['CanUsePrivilegedPriority'] = 'True'
-      else:
-        rsffile['AccessControlInfo']['CanUsePrivilegedPriority'] = 'False'
-      if caps & 0x20 != 0:
-        rsffile['AccessControlInfo']['PermitMainFunctionArgument'] = 'True'
-      else:
-        rsffile['AccessControlInfo']['PermitMainFunctionArgument'] = 'False'
-      if caps & 0x40 != 0:
-        rsffile['AccessControlInfo']['CanShareDeviceMemory'] = 'True'
-      else:
-        rsffile['AccessControlInfo']['CanShareDeviceMemory'] = 'False'
-      if caps & 0x80 != 0:
-        rsffile['AccessControlInfo']['RunnableOnSleep'] = 'True'
-      else:
-        rsffile['AccessControlInfo']['RunnableOnSleep'] = 'False'
-      if caps & 0x800 != 0:
-        rsffile['AccessControlInfo']['SpecialMemoryArrange'] = 'True'
-      else:
-        rsffile['AccessControlInfo']['SpecialMemoryArrange'] = 'False'
-      if caps & 0x1000 != 0:
-        rsffile['AccessControlInfo']['CanAccessCore2'] = 'True'
-      else:
-        rsffile['AccessControlInfo']['CanAccessCore2'] = 'False'
-    # MemoryMapping
-    elif caps & 0xFFC00000 == 0xFF800000:
-      if caps & 0x100000 != 0:  #read only
-        rsffile['AccessControlInfo']['MemoryMapping']\
-          .append("0x%0.1X%0.2X%0.2X000:r" % (caps >> 16 & 0xF, caps >> 8 & 0xFF, caps & 0xFF))
-      else: #read write
-        rsffile['AccessControlInfo']['MemoryMapping']\
+  if ncchHdr['exhdrsize'] == 0x400:  #  Only if there is an exheader
+    # AccessControlInfo
+    
+    # handle those annoying ARM11 Kernel Capabilities values
+    for caps in accCtrlInfo['kernelcaps']:
+      # InterruptNumbers
+      # each has 4 interrupts packed in, 7 bits each
+      if caps & 0xF0000000 == 0xE0000000:
+        ints = (caps >> 0 & 0x7F, caps >> 7 & 0x7F, caps >> 14 & 0x7F, caps >> 21 & 0x7F)
+        for intr in ints:
+          if intr == 0:
+            break
+          rsffile['AccessControlInfo']['InterruptNumers'].append(intr)
+      # SystemCallAccess
+      # first 3 bits after the descriptor value indicate a group of 24 syscalls
+      # the next 24 bits are a mask for this group.
+      elif caps & 0xF8000000 == 0xF0000000:
+        scstart = (caps >> 24 & 0x7) * 24
+        for sc in enumerate(sysCalls[scstart:scstart+24]):
+          if caps & (1 << sc[0]) != 0:
+            rsffile['AccessControlInfo']['SystemCallAccess']\
+              .append("%s: %d" % (sc[1], scstart + sc[0]))
+      # ReleaseKernelMajor, ReleaseKernelMinor
+      elif caps & 0xFE000000 == 0xFC000000:
+        rsffile['AccessControlInfo']['ReleaseKernelMinor'] = caps >> 0 & 0xFF
+        rsffile['AccessControlInfo']['ReleaseKernelMajor'] = caps >> 8 & 0xFF
+      # HandleTableSize
+      elif caps & 0xFF000000 == 0xFE000000:
+        rsffile['AccessControlInfo']['HandleTableSize'] = caps & 0x7FFFF
+      # DisableDebug, EnableForceDebug, CanWriteSharedPage, CanUsePrivilegedPriority,
+      # CanUseNonAlphabetAndNumber, PermitMainFunctionArgument, CanShareDeviceMemory,
+      # RunnableOnSleep, SpecialMemoryArrange
+      elif caps & 0xFF800000 == 0xFF000000:
+        if caps & 0x1 != 0:
+          rsffile['AccessControlInfo']['DisableDebug'] = 'False'
+        else:
+          rsffile['AccessControlInfo']['DisableDebug'] = 'True'
+        if caps & 0x2 != 0:
+          rsffile['AccessControlInfo']['EnableForceDebug'] = 'True'
+        else:
+          rsffile['AccessControlInfo']['EnableForceDebug'] = 'False'
+        if caps & 0x4 != 0:
+          rsffile['AccessControlInfo']['CanUseNonAlphabetAndNumber'] = 'True'
+        else:
+          rsffile['AccessControlInfo']['CanUseNonAlphabetAndNumber'] = 'False'
+        if caps & 0x8 != 0:
+          rsffile['AccessControlInfo']['CanWriteSharedPage'] = 'True'
+        else:
+          rsffile['AccessControlInfo']['CanWriteSharedPage'] = 'False'
+        if caps & 0x10 != 0:
+          rsffile['AccessControlInfo']['CanUsePrivilegedPriority'] = 'True'
+        else:
+          rsffile['AccessControlInfo']['CanUsePrivilegedPriority'] = 'False'
+        if caps & 0x20 != 0:
+          rsffile['AccessControlInfo']['PermitMainFunctionArgument'] = 'True'
+        else:
+          rsffile['AccessControlInfo']['PermitMainFunctionArgument'] = 'False'
+        if caps & 0x40 != 0:
+          rsffile['AccessControlInfo']['CanShareDeviceMemory'] = 'True'
+        else:
+          rsffile['AccessControlInfo']['CanShareDeviceMemory'] = 'False'
+        if caps & 0x80 != 0:
+          rsffile['AccessControlInfo']['RunnableOnSleep'] = 'True'
+        else:
+          rsffile['AccessControlInfo']['RunnableOnSleep'] = 'False'
+        if caps & 0x800 != 0:
+          rsffile['AccessControlInfo']['SpecialMemoryArrange'] = 'True'
+        else:
+          rsffile['AccessControlInfo']['SpecialMemoryArrange'] = 'False'
+        if caps & 0x1000 != 0:
+          rsffile['AccessControlInfo']['CanAccessCore2'] = 'True'
+        else:
+          rsffile['AccessControlInfo']['CanAccessCore2'] = 'False'
+      # MemoryMapping
+      elif caps & 0xFFC00000 == 0xFF800000:
+        if caps & 0x100000 != 0:  #read only
+          rsffile['AccessControlInfo']['MemoryMapping']\
+            .append("0x%0.1X%0.2X%0.2X000:r" % (caps >> 16 & 0xF, caps >> 8 & 0xFF, caps & 0xFF))
+        else: #read write
+          rsffile['AccessControlInfo']['MemoryMapping']\
+            .append("0x%0.1X%0.2X%0.2X000" % (caps >> 16 & 0xF, caps >> 8 & 0xFF, caps & 0xFF))
+      # IORegisterMapping
+      elif caps & 0xFFF00000 == 0xFFE00000:
+        rsffile['AccessControlInfo']['IORegisterMapping']\
           .append("0x%0.1X%0.2X%0.2X000" % (caps >> 16 & 0xF, caps >> 8 & 0xFF, caps & 0xFF))
-    # IORegisterMapping
-    elif caps & 0xFFF00000 == 0xFFE00000:
-      rsffile['AccessControlInfo']['IORegisterMapping']\
-        .append("0x%0.1X%0.2X%0.2X000" % (caps >> 16 & 0xF, caps >> 8 & 0xFF, caps & 0xFF))
-    # Empty entry
-    elif caps == 0xFFFFFFFF:
-      pass
-    else:
-      warning("Unsupported ARM9 Kernel Capabilities Descriptor %0.8X!" % caps)
+      # Empty entry
+      elif caps == 0xFFFFFFFF:
+        pass
+      else:
+        warning("Unsupported ARM9 Kernel Capabilities Descriptor %0.8X!" % caps)
 
-  # UseExtSaveData, EXtSaveDataId, UseOtherVariationSaveData, AccessibleSaveDataIds
-  # makerom indicates a mask of 0xFFFFFF but only shifts 20 bits
-  if accCtrlInfo['otherattrib'] & 0x2 != 0:
-    ids = (accCtrlInfo['extdataid'] >>  0 & 0xFFFFF,
-           accCtrlInfo['extdataid'] >> 20 & 0xFFFFF,
-           accCtrlInfo['extdataid'] >> 40 & 0xFFFFF,
-           accCtrlInfo['storageid'] >>  0 & 0xFFFFF,
-           accCtrlInfo['storageid'] >> 20 & 0xFFFFF,
-           accCtrlInfo['storageid'] >> 40 & 0xFFFFF)
+    # UseExtSaveData, EXtSaveDataId, UseOtherVariationSaveData, AccessibleSaveDataIds
+    # makerom indicates a mask of 0xFFFFFF but only shifts 20 bits
+    if accCtrlInfo['otherattrib'] & 0x2 != 0:
+      ids = (accCtrlInfo['extdataid'] >>  0 & 0xFFFFF,
+             accCtrlInfo['extdataid'] >> 20 & 0xFFFFF,
+             accCtrlInfo['extdataid'] >> 40 & 0xFFFFF,
+             accCtrlInfo['storageid'] >>  0 & 0xFFFFF,
+             accCtrlInfo['storageid'] >> 20 & 0xFFFFF,
+             accCtrlInfo['storageid'] >> 40 & 0xFFFFF)
 
-    for id in ids:
-      if id != 0x00000:
-        rsffile['AccessControlInfo']['AccessibleSaveDataIds'].append(id)        
-        
-    del rsffile['AccessControlInfo']['OtherUserSaveDataId1']
-    del rsffile['AccessControlInfo']['OtherUserSaveDataId2']
-    del rsffile['AccessControlInfo']['OtherUserSaveDataId3']
-  else:
-    del rsffile['AccessControlInfo']['AccessibleSaveDataIds']
-
-    if accCtrlInfo['extdataid'] != 0:
-      rsffile['AccessControlInfo']['UseExtSaveData'] = 'True'
-      rsffile['AccessControlInfo']['ExtSaveDataId'] = accCtrlInfo['extdataid']
-
-    ids = (accCtrlInfo['storageid'] >>  0 & 0xFFFFF,
-           accCtrlInfo['storageid'] >> 20 & 0xFFFFF,
-           accCtrlInfo['storageid'] >> 40 & 0xFFFFF)
-    if ids[0] != 0:
-      rsffile['AccessControlInfo']['OtherUserSaveDataId1'] = ids[0]
-    else:
+      for id in ids:
+        if id != 0x00000:
+          rsffile['AccessControlInfo']['AccessibleSaveDataIds'].append(id)        
+          
       del rsffile['AccessControlInfo']['OtherUserSaveDataId1']
-    if ids[1] != 0:
-      rsffile['AccessControlInfo']['OtherUserSaveDataId2'] = ids[1]
-    else:
       del rsffile['AccessControlInfo']['OtherUserSaveDataId2']
-    if ids[2] != 0:
-      rsffile['AccessControlInfo']['OtherUserSaveDataId3'] = ids[2]
-    else:
       del rsffile['AccessControlInfo']['OtherUserSaveDataId3']
+    else:
+      del rsffile['AccessControlInfo']['AccessibleSaveDataIds']
 
-  if accCtrlInfo['storageid'] & 0x1000000000000000 != 0:
-    rsffile['AccessControlInfo']['UseOtherVariationSaveData'] = 'True'
-  else:
-    rsffile['AccessControlInfo']['UseOtherVariationSaveData'] = 'False'
+      if accCtrlInfo['extdataid'] != 0:
+        rsffile['AccessControlInfo']['UseExtSaveData'] = 'True'
+        rsffile['AccessControlInfo']['ExtSaveDataId'] = accCtrlInfo['extdataid']
+
+      ids = (accCtrlInfo['storageid'] >>  0 & 0xFFFFF,
+             accCtrlInfo['storageid'] >> 20 & 0xFFFFF,
+             accCtrlInfo['storageid'] >> 40 & 0xFFFFF)
+      if ids[0] != 0:
+        rsffile['AccessControlInfo']['OtherUserSaveDataId1'] = ids[0]
+      else:
+        del rsffile['AccessControlInfo']['OtherUserSaveDataId1']
+      if ids[1] != 0:
+        rsffile['AccessControlInfo']['OtherUserSaveDataId2'] = ids[1]
+      else:
+        del rsffile['AccessControlInfo']['OtherUserSaveDataId2']
+      if ids[2] != 0:
+        rsffile['AccessControlInfo']['OtherUserSaveDataId3'] = ids[2]
+      else:
+        del rsffile['AccessControlInfo']['OtherUserSaveDataId3']
+
+    if accCtrlInfo['storageid'] & 0x1000000000000000 != 0:
+      rsffile['AccessControlInfo']['UseOtherVariationSaveData'] = 'True'
+    else:
+      rsffile['AccessControlInfo']['UseOtherVariationSaveData'] = 'False'
+      
+    # SystemSaveDataId(1,2)
+    if accCtrlInfo['syssaveid1'] != 0:
+      rsffile['AccessControlInfo']['SystemSaveDataId1'] = accCtrlInfo['syssaveid1']
+    else:
+      del rsffile['AccessControlInfo']['SystemSaveDataId1']
+    if accCtrlInfo['syssaveid2'] != 0:
+      rsffile['AccessControlInfo']['SystemSaveDataId2'] = accCtrlInfo['syssaveid2']
+    else:
+      del rsffile['AccessControlInfo']['SystemSaveDataId2']
+
+    # EnableL2Cache, CpuSpeed
+    if accCtrlInfo['flag1'] & 0x1 != 0:
+      rsffile['AccessControlInfo']['EnableL2Cache'] = 'True'
+    else:
+      rsffile['AccessControlInfo']['EnableL2Cache'] = 'False'
+    # this is just a flag, makerom will not accept other values for this
+    if accCtrlInfo['flag1'] & 0x2 != 0:
+      rsffile['AccessControlInfo']['CpuSpeed'] = '804mhz'
+    else:
+      rsffile['AccessControlInfo']['CpuSpeed'] = '268mhz'
     
-  # SystemSaveDataId(1,2)
-  if accCtrlInfo['syssaveid1'] != 0:
-    rsffile['AccessControlInfo']['SystemSaveDataId1'] = accCtrlInfo['syssaveid1']
-  else:
-    del rsffile['AccessControlInfo']['SystemSaveDataId1']
-  if accCtrlInfo['syssaveid2'] != 0:
-    rsffile['AccessControlInfo']['SystemSaveDataId2'] = accCtrlInfo['syssaveid2']
-  else:
-    del rsffile['AccessControlInfo']['SystemSaveDataId2']
+    # IdealProcessor, AffinityMask, Priority, CoreVersion, DescVersion
+    # ResourceLimtCategory, MaxCpu
+    rsffile['AccessControlInfo']['IdealProcessor'] = accCtrlInfo['flag0'] >> 0 & 0x3
+    rsffile['AccessControlInfo']['AffinityMask'] = accCtrlInfo['flag0'] >> 2 & 0x3
+    rsffile['AccessControlInfo']['Priority'] = accCtrlInfo['priority'] - 32 # makerom increases this value by 32 for applications
+    rsffile['AccessControlInfo']['CoreVersion'] = accCtrlInfo['corever']
+    rsffile['AccessControlInfo']['DescVersion'] = accCtrlInfo['arm9ver']
+    rsffile['AccessControlInfo']['ResourceLimitCategory'] = accCtrlInfo['category']
+    rsffile['AccessControlInfo']['MaxCpu'] = accCtrlInfo['reslimits'][0]
 
-  # EnableL2Cache, CpuSpeed
-  if accCtrlInfo['flag1'] & 0x1 != 0:
-    rsffile['AccessControlInfo']['EnableL2Cache'] = 'True'
-  else:
-    rsffile['AccessControlInfo']['EnableL2Cache'] = 'False'
-  # this is just a flag, makerom will not accept other values for this
-  if accCtrlInfo['flag1'] & 0x2 != 0:
-    rsffile['AccessControlInfo']['CpuSpeed'] = '804mhz'
-  else:
-    rsffile['AccessControlInfo']['CpuSpeed'] = '268mhz'
-  
-  # IdealProcessor, AffinityMask, Priority, CoreVersion, DescVersion
-  # ResourceLimtCategory, MaxCpu
-  rsffile['AccessControlInfo']['IdealProcessor'] = accCtrlInfo['flag0'] >> 0 & 0x3
-  rsffile['AccessControlInfo']['AffinityMask'] = accCtrlInfo['flag0'] >> 2 & 0x3
-  rsffile['AccessControlInfo']['Priority'] = accCtrlInfo['priority'] - 32 # makerom increases this value by 32 for applications
-  rsffile['AccessControlInfo']['CoreVersion'] = accCtrlInfo['corever']
-  rsffile['AccessControlInfo']['DescVersion'] = accCtrlInfo['arm9ver']
-  rsffile['AccessControlInfo']['ResourceLimitCategory'] = accCtrlInfo['category']
-  rsffile['AccessControlInfo']['MaxCpu'] = accCtrlInfo['reslimits'][0]
+    # SystemMode
+    if accCtrlInfo['flag0'] >> 4 & 0xF == 0:
+      rsffile['AccessControlInfo']['SystemMode'] = '64MB'
+    elif accCtrlInfo['flag0'] >> 4 & 0xF == 1:
+      rsffile['AccessControlInfo']['SystemMode'] = 'UNK'
+    elif accCtrlInfo['flag0'] >> 4 & 0xF == 2:
+      rsffile['AccessControlInfo']['SystemMode'] = '96MB'
+    elif accCtrlInfo['flag0'] >> 4 & 0xF == 3:
+      rsffile['AccessControlInfo']['SystemMode'] = '80MB'
+    elif accCtrlInfo['flag0'] >> 4 & 0xF == 4:
+      rsffile['AccessControlInfo']['SystemMode'] = '72MB'
+    elif accCtrlInfo['flag0'] >> 4 & 0xF == 5:
+      rsffile['AccessControlInfo']['SystemMode'] = '32MB'
+    else:
+      warning("Invalid SystemMode, ignoring!")
+      del rsffile['AccessControlInfo']['SystemMode']
+      
+    # SystemModeExt
+    # These are also just flags, they can't be set to any other value.
+    if accCtrlInfo['flag2'] & 0x4 == 0:
+      rsffile['AccessControlInfo']['SystemModeExt'] = 'Legacy'
+    elif accCtrlInfo['flag2'] & 0x4 == 1:
+      rsffile['AccessControlInfo']['SystemModeExt'] = '124MB'
+    elif accCtrlInfo['flag2'] & 0x4 == 2:
+      rsffile['AccessControlInfo']['SystemModeExt'] = '178MB'
+    else:
+      warning("Invalid SystemModeExt, ignoring!")
+      del rsffile['AccessControlInfo']['SystemModeExt']
+      
+    # FileSystemAccess
+    for fsPerm in enumerate(FSAccessInfo):
+      if accCtrlInfo['fsaccess'] & (1 << fsPerm[0]) != 0:
+        rsffile['AccessControlInfo']['FileSystemAccess'].append(fsPerm[1])
 
-  # SystemMode
-  if accCtrlInfo['flag0'] >> 4 & 0xF == 0:
-    rsffile['AccessControlInfo']['SystemMode'] = '64MB'
-  elif accCtrlInfo['flag0'] >> 4 & 0xF == 1:
-    rsffile['AccessControlInfo']['SystemMode'] = 'UNK'
-  elif accCtrlInfo['flag0'] >> 4 & 0xF == 2:
-    rsffile['AccessControlInfo']['SystemMode'] = '96MB'
-  elif accCtrlInfo['flag0'] >> 4 & 0xF == 3:
-    rsffile['AccessControlInfo']['SystemMode'] = '80MB'
-  elif accCtrlInfo['flag0'] >> 4 & 0xF == 4:
-    rsffile['AccessControlInfo']['SystemMode'] = '72MB'
-  elif accCtrlInfo['flag0'] >> 4 & 0xF == 5:
-    rsffile['AccessControlInfo']['SystemMode'] = '32MB'
-  else:
-    warning("Invalid SystemMode, ignoring!")
-    del rsffile['AccessControlInfo']['SystemMode']
+    # IoAccessControl
+    for cap in enumerate(ARM9Access):
+      if accCtrlInfo['arm9caps'] & (1 << cap[0]) != 0:
+        rsffile['AccessControlInfo']['IoAccessControl'].append(cap[1])
+
+    # ServiceAccessControl
+    # These need to be converted to real strings later
+    for service in accCtrlInfo['services']:
+      if service != b'\x00\x00\x00\x00\x00\x00\x00\x00':
+        rsffile['AccessControlInfo']['ServiceAccessControl'].append(service)
     
-  # SystemModeExt
-  # These are also just flags, they can't be set to any other value.
-  if accCtrlInfo['flag2'] & 0x4 == 0:
-    rsffile['AccessControlInfo']['SystemModeExt'] = 'Legacy'
-  elif accCtrlInfo['flag2'] & 0x4 == 1:
-    rsffile['AccessControlInfo']['SystemModeExt'] = '124MB'
-  elif accCtrlInfo['flag2'] & 0x4 == 2:
-    rsffile['AccessControlInfo']['SystemModeExt'] = '178MB'
-  else:
-    warning("Invalid SystemModeExt, ignoring!")
-    del rsffile['AccessControlInfo']['SystemModeExt']
+
+    # SystemControlInfo
     
-  # FileSystemAccess
-  for fsPerm in enumerate(FSAccessInfo):
-    if accCtrlInfo['fsaccess'] & (1 << fsPerm[0]) != 0:
-      rsffile['AccessControlInfo']['FileSystemAccess'].append(fsPerm[1])
+    # StackSize, RemasterVersion, JumpId, SaveDataSize
+    rsffile['SystemControlInfo']['StackSize'] = sysCtrlInfo['stack']
+    rsffile['SystemControlInfo']['RemasterVersion'] = sysCtrlInfo['remaster']
+    rsffile['SystemControlInfo']['JumpId'] = sysCtrlInfo['jumpid']
+    rsffile['SystemControlInfo']['SaveDataSize'] = sysCtrlInfo['savesize'] # needs to be made "human readable" later
 
-  # IoAccessControl
-  for cap in enumerate(ARM9Access):
-    if accCtrlInfo['arm9caps'] & (1 << cap[0]) != 0:
-      rsffile['AccessControlInfo']['IoAccessControl'].append(cap[1])
-
-  # ServiceAccessControl
-  # These need to be converted to real strings later
-  for service in accCtrlInfo['services']:
-    if service != b'\x00\x00\x00\x00\x00\x00\x00\x00':
-      rsffile['AccessControlInfo']['ServiceAccessControl'].append(service)
-
-
-  # SystemControlInfo
-  
-  # StackSize, RemasterVersion, JumpId, SaveDataSize
-  rsffile['SystemControlInfo']['StackSize'] = sysCtrlInfo['stack']
-  rsffile['SystemControlInfo']['RemasterVersion'] = sysCtrlInfo['remaster']
-  rsffile['SystemControlInfo']['JumpId'] = sysCtrlInfo['jumpid']
-  rsffile['SystemControlInfo']['SaveDataSize'] = sysCtrlInfo['savesize'] # needs to be made "human readable" later
-
-  # Dependency
-  for dep in sysCtrlInfo['dependencies']:
-    if dep != 0:
-      rsffile['SystemControlInfo']['Dependency'].append(dep)
-
+    # Dependency
+    for dep in sysCtrlInfo['dependencies']:
+      if dep != 0:
+        rsffile['SystemControlInfo']['Dependency'].append(dep)
+  else:  # No ExHeader NCCH
+    del rsffile['AccessControlInfo']
+    del rsffile['SystemControlInfo']
 
   # BasicInfo
   
-  # Title, CompanyCode, ProductCode
+  # Title
   # These all need to be made in to proper strings
-  rsffile['BasicInfo']['Title'] = sysCtrlInfo['title']
+  if ncchHdr['exhdrsize'] == 0x400:
+    rsffile['BasicInfo']['Title'] = sysCtrlInfo['title']
+  else:
+    del rsffile['BasicInfo']['Title']
+  
+  # CompanyCode, ProductCode
   rsffile['BasicInfo']['CompanyCode'] = ncchHdr['makercode']
   rsffile['BasicInfo']['ProductCode'] = ncchHdr['productcode']
   
+  # ContentType
+  if ncchHdr['flags'] >> (8 * 5) >> 2 & 0x7 == 0:
+    rsffile['BasicInfo']['ContentType'] = 'Application'
+  elif ncchHdr['flags'] >> (8 * 5) >> 2 & 0x7 == 1:
+    rsffile['BasicInfo']['ContentType'] = 'SystemUpdate'
+  elif ncchHdr['flags'] >> (8 * 5) >> 2 & 0x7 == 2:
+    rsffile['BasicInfo']['ContentType'] = 'Manual'
+  elif ncchHdr['flags'] >> (8 * 5) >> 2 & 0x7 == 3:
+    rsffile['BasicInfo']['ContentType'] = 'Child'
+  elif ncchHdr['flags'] >> (8 * 5) >> 2 & 0x7 == 4:
+    rsffile['BasicInfo']['ContentType'] = 'Trial'
+  elif ncchHdr['flags'] >> (8 * 5) >> 2 & 0x7 == 5:
+    rsffile['BasicInfo']['ContentType'] = 'ExtendedSystemUpdate'
+  else:
+    rsffile['BasicInfo']['ContentType'] = 'Unknown'
+
 
   # TitleInfo
   
   # UniqueId
   rsffile['TitleInfo']['UniqueId'] = ncchHdr['programid'] >> 8 & 0xFFFFFF
+  
+  # Category
+  try:
+    rsffile['TitleInfo']['Category'] = categories[ncchHdr['programid'] >> 32 & 0x1FF]
+  except KeyError:
+    rsffile['TitleInfo']['Category'] = 'Unknown'
+
+  # ChildIndex, DemoIndex, ContentsIndex, Variation, Version
+  if rsffile['TitleInfo']['Category'] == 'DlpChild':
+    rsffile['TitleInfo']['ChildIndex'] = ncchHdr['programid'] & 0xFF
+  elif rsffile['TitleInfo']['Category'] == 'Demo':
+    rsffile['TitleInfo']['DemoIndex'] = ncchHdr['programid'] & 0xFF
+  elif rsffile['TitleInfo']['Category'] == 'Contents' or \
+       rsffile['TitleInfo']['Category'] == 'SharedContents' or \
+       rsffile['TitleInfo']['Category'] == 'AutoUpdateContents':
+    rsffile['TitleInfo']['ContentsIndex'] = ncchHdr['programid'] & 0xFF
+  elif rsffile['TitleInfo']['Category'] == 'AddOnContents':
+    rsffile['TitleInfo']['Variation'] = ncchHdr['programid'] & 0xFF
+  elif ncchHdr['programid'] & 0xFF != 0x00:
+    rsffile['TitleInfo']['Version'] = ncchHdr['programid'] & 0xFF
+
+  # Platform
+  if ncchHdr['flags'] >> (8 * 4) & 0xFF == 1:
+    rsffile['TitleInfo']['Platform'] = 'ctr'   # Old 3DS
+  elif ncchHdr['flags'] >> (8 * 4) & 0xFF == 2:
+    rsffile['TitleInfo']['Platform'] = 'snake' # New 3DS
+  else:
+    rsffile['TitleInfo']['Platform'] = 'unknown'
 
 
 def reformatData():
-  # Reformat fields that need it
-  for i in range(len(rsffile['AccessControlInfo']['InterruptNumbers'])):
-    rsffile['AccessControlInfo']['InterruptNumbers'][i] =\
-      "0x%0.2X" % rsffile['AccessControlInfo']['InterruptNumbers'][i]
+  if ncchHdr['exhdrsize'] == 0x400:
+    # Reformat fields that need it
+    for i in range(len(rsffile['AccessControlInfo']['InterruptNumbers'])):
+      rsffile['AccessControlInfo']['InterruptNumbers'][i] =\
+        "0x%0.2X" % rsffile['AccessControlInfo']['InterruptNumbers'][i]
 
-  rsffile['AccessControlInfo']['HandleTableSize'] =\
-    "0x%0.2X" % rsffile['AccessControlInfo']['HandleTableSize']
-  
-  # this is possibly removed
-  if 'AccessibleSaveDataIds' in rsffile['AccessControlInfo']:
-    for i in range(len(rsffile['AccessControlInfo']['AccessibleSaveDataIds'])):
-      rsffile['AccessControlInfo']['AccessibleSaveDataIds'][i] =\
-        "0x%0.6X" % rsffile['AccessControlInfo']['AccessibleSaveDataIds'][i]
+    rsffile['AccessControlInfo']['HandleTableSize'] =\
+      "0x%0.2X" % rsffile['AccessControlInfo']['HandleTableSize']
+    
+    # this is possibly removed
+    if 'AccessibleSaveDataIds' in rsffile['AccessControlInfo']:
+      for i in range(len(rsffile['AccessControlInfo']['AccessibleSaveDataIds'])):
+        rsffile['AccessControlInfo']['AccessibleSaveDataIds'][i] =\
+          "0x%0.6X" % rsffile['AccessControlInfo']['AccessibleSaveDataIds'][i]
 
-  if 'ExtSaveDataId' in rsffile['AccessControlInfo']:
-    rsffile['AccessControlInfo']['ExtSaveDataId'] =\
-      "0x%0.16X" % rsffile['AccessControlInfo']['ExtSaveDataId']
-  
-  rsffile['AccessControlInfo']['CoreVersion'] =\
-    "0x%X" % rsffile['AccessControlInfo']['CoreVersion']
+    if 'ExtSaveDataId' in rsffile['AccessControlInfo']:
+      rsffile['AccessControlInfo']['ExtSaveDataId'] =\
+        "0x%0.16X" % rsffile['AccessControlInfo']['ExtSaveDataId']
+    
+    rsffile['AccessControlInfo']['CoreVersion'] =\
+      "0x%X" % rsffile['AccessControlInfo']['CoreVersion']
 
-  rsffile['AccessControlInfo']['DescVersion'] =\
-    "0x%X" % rsffile['AccessControlInfo']['DescVersion']
+    rsffile['AccessControlInfo']['DescVersion'] =\
+      "0x%X" % rsffile['AccessControlInfo']['DescVersion']
 
-  rsffile['AccessControlInfo']['ResourceLimitCategory'] =\
-    "%0.2X" % rsffile['AccessControlInfo']['ResourceLimitCategory']
+    rsffile['AccessControlInfo']['ResourceLimitCategory'] =\
+      "%0.2X" % rsffile['AccessControlInfo']['ResourceLimitCategory']
 
-  rsffile['AccessControlInfo']['MaxCpu'] =\
-    "0x%X" % rsffile['AccessControlInfo']['MaxCpu']
+    rsffile['AccessControlInfo']['MaxCpu'] =\
+      "0x%X" % rsffile['AccessControlInfo']['MaxCpu']
 
-  if 'SystemSaveDataId1' in rsffile['AccessControlInfo']:
-    rsffile['AccessControlInfo']['SystemSaveDataId1'] =\
-      "0x%0.8X" % rsffile['AccessControlInfo']['SystemSaveDataId1']
-  if 'SystemSaveDataId2' in rsffile['AccessControlInfo']:
-    rsffile['AccessControlInfo']['SystemSaveDataId2'] =\
-      "0x%0.8X" % rsffile['AccessControlInfo']['SystemSaveDataId2']
-  if 'OtherUserSaveDataId1' in rsffile['AccessControlInfo']:
-    rsffile['AccessControlInfo']['OtherUserSaveDataId1'] =\
-      "0x%0.8X" % rsffile['AccessControlInfo']['OtherUserSaveDataId1']
-  if 'OtherUserSaveDataId2' in rsffile['AccessControlInfo']:
-    rsffile['AccessControlInfo']['OtherUserSaveDataId2'] =\
-      "0x%0.8X" % rsffile['AccessControlInfo']['OtherUserSaveDataId2']
-  if 'OtherUserSaveDataId3' in rsffile['AccessControlInfo']:
-    rsffile['AccessControlInfo']['OtherUserSaveDataId3'] =\
-      "0x%0.8X" % rsffile['AccessControlInfo']['OtherUserSaveDataId3']
+    if 'SystemSaveDataId1' in rsffile['AccessControlInfo']:
+      rsffile['AccessControlInfo']['SystemSaveDataId1'] =\
+        "0x%0.8X" % rsffile['AccessControlInfo']['SystemSaveDataId1']
+    if 'SystemSaveDataId2' in rsffile['AccessControlInfo']:
+      rsffile['AccessControlInfo']['SystemSaveDataId2'] =\
+        "0x%0.8X" % rsffile['AccessControlInfo']['SystemSaveDataId2']
+    if 'OtherUserSaveDataId1' in rsffile['AccessControlInfo']:
+      rsffile['AccessControlInfo']['OtherUserSaveDataId1'] =\
+        "0x%0.8X" % rsffile['AccessControlInfo']['OtherUserSaveDataId1']
+    if 'OtherUserSaveDataId2' in rsffile['AccessControlInfo']:
+      rsffile['AccessControlInfo']['OtherUserSaveDataId2'] =\
+        "0x%0.8X" % rsffile['AccessControlInfo']['OtherUserSaveDataId2']
+    if 'OtherUserSaveDataId3' in rsffile['AccessControlInfo']:
+      rsffile['AccessControlInfo']['OtherUserSaveDataId3'] =\
+        "0x%0.8X" % rsffile['AccessControlInfo']['OtherUserSaveDataId3']
 
-  for i in range(len(rsffile['AccessControlInfo']['ServiceAccessControl'])):
-    service = rsffile['AccessControlInfo']['ServiceAccessControl'][i]
-    endchar = service.find(0x00)
+    for i in range(len(rsffile['AccessControlInfo']['ServiceAccessControl'])):
+      service = rsffile['AccessControlInfo']['ServiceAccessControl'][i]
+      endchar = service.find(0x00)
+      if endchar == -1:
+        rsffile['AccessControlInfo']['ServiceAccessControl'][i] =\
+          service.decode('ascii')
+      else:
+        rsffile['AccessControlInfo']['ServiceAccessControl'][i] =\
+          service[:endchar].decode('ascii')
+
+    rsffile['SystemControlInfo']['StackSize'] =\
+      "0x%0.8X" % rsffile['SystemControlInfo']['StackSize']
+
+    rsffile['SystemControlInfo']['RemasterVersion'] =\
+      "%0.4X" % rsffile['SystemControlInfo']['RemasterVersion']
+
+    rsffile['SystemControlInfo']['JumpId'] =\
+      "0x%0.16X" % rsffile['SystemControlInfo']['JumpId']
+
+    savesize = rsffile['SystemControlInfo']['SaveDataSize']
+    if savesize >= GIGABYTE and (savesize % GIGABYTE) == 0:
+      rsffile['SystemControlInfo']['SaveDataSize'] = "%dGB" % (savesize / GIGABYTE)
+    elif savesize >= MEGABYTE and savesize < GIGABYTE and (savesize % MEGABYTE) == 0:
+      rsffile['SystemControlInfo']['SaveDataSize'] = "%dMB" % (savesize / MEGABYTE)
+    elif savesize >= KILOBYTE and savesize < MEGABYTE and (savesize % KILOBYTE) == 0:
+      rsffile['SystemControlInfo']['SaveDataSize'] = "%dKB" % (savesize / KILOBYTE)
+    else: # This probably doesn't work but it shouldn't ever come up
+      rsffile['SystemControlInfo']['SaveDataSize'] = "%d" % savesize
+
+    for i in range(len(rsffile['SystemControlInfo']['Dependency'])):
+      rsffile['SystemControlInfo']['Dependency'][i] =\
+        "asdf: 0x%0.16XL" % rsffile['SystemControlInfo']['Dependency'][i]
+
+    title = rsffile['BasicInfo']['Title']
+    endchar = title.find(0x00)
     if endchar == -1:
-      rsffile['AccessControlInfo']['ServiceAccessControl'][i] =\
-        service.decode('ascii')
+      rsffile['BasicInfo']['Title'] =\
+        title.decode('ascii')
     else:
-      rsffile['AccessControlInfo']['ServiceAccessControl'][i] =\
-        service[:endchar].decode('ascii')
-
-  rsffile['SystemControlInfo']['StackSize'] =\
-    "0x%0.8X" % rsffile['SystemControlInfo']['StackSize']
-
-  rsffile['SystemControlInfo']['RemasterVersion'] =\
-    "%0.4X" % rsffile['SystemControlInfo']['RemasterVersion']
-
-  rsffile['SystemControlInfo']['JumpId'] =\
-    "0x%0.16X" % rsffile['SystemControlInfo']['JumpId']
-
-  savesize = rsffile['SystemControlInfo']['SaveDataSize']
-  if savesize >= GIGABYTE and (savesize % GIGABYTE) == 0:
-    rsffile['SystemControlInfo']['SaveDataSize'] = "%dGB" % (savesize / GIGABYTE)
-  elif savesize >= MEGABYTE and savesize < GIGABYTE and (savesize % MEGABYTE) == 0:
-    rsffile['SystemControlInfo']['SaveDataSize'] = "%dMB" % (savesize / MEGABYTE)
-  elif savesize >= KILOBYTE and savesize < MEGABYTE and (savesize % KILOBYTE) == 0:
-    rsffile['SystemControlInfo']['SaveDataSize'] = "%dKB" % (savesize / KILOBYTE)
-  else: # This probably doesn't work but it shouldn't ever come up
-    rsffile['SystemControlInfo']['SaveDataSize'] = "%d" % savesize
-
-  for i in range(len(rsffile['SystemControlInfo']['Dependency'])):
-    rsffile['SystemControlInfo']['Dependency'][i] =\
-      "asdf: 0x%0.16XL" % rsffile['SystemControlInfo']['Dependency'][i]
-
-  title = rsffile['BasicInfo']['Title']
-  endchar = title.find(0x00)
-  if endchar == -1:
-    rsffile['BasicInfo']['Title'] =\
-      title.decode('ascii')
-  else:
-    rsffile['BasicInfo']['Title'] =\
-      title[:endchar].decode('ascii')
+      rsffile['BasicInfo']['Title'] =\
+        title[:endchar].decode('ascii')
 
   rsffile['BasicInfo']['CompanyCode'] =\
     rsffile['BasicInfo']['CompanyCode'].decode('ascii')
@@ -775,7 +868,7 @@ def reformatData():
 def keyString(category, name):
   return("%s/%s" % (category, name))
 
-
+ 
 def splitKeyValue(kv):
   equal = kv.index('=')
   if equal == 0 or equal == -1:
@@ -919,8 +1012,8 @@ parser = argparse.ArgumentParser(description="Generate RSF file from 3DS CCI " \
                                  "and exheader.")
 parser.add_argument('rom', metavar="<CCI File>", type=str, help="ROM file to " \
                     "read data from.")
-parser.add_argument('exheader', metavar="<ExHeader file>", type=str,
-                    help="File containing the ExHeader.")
+parser.add_argument('--partition', metavar="<Partition ID>", type=int, help= \
+                    "Partition to read data from. (0-7)", default=0)
 parser.add_argument('--romfsdir', metavar="<RomFs dir>", type=str,
                     help="Specify a RomFs path.")
 parser.add_argument('--option', metavar="<Category/Name{,+,.#}=Value>",
@@ -951,17 +1044,25 @@ parser.add_argument('--list-type', metavar="<Category/Name={nodash,dash}>",
 
 
 args = parser.parse_args()
+
+if args.partition < 0 or args.partition > 7:
+  printf("Partition ID must be between 0 and 7.\n");
+  exit(-1)
+
 if args.list_type != None:
   listTypes(args.list_type)
 
 with open(args.rom, 'rb') as f:
   ncsdHdr = makeNcsdHdrDictFromTuple(ncsdHdrStruct.unpack(f.read(ncsdHdrStruct.size)))
-  f.seek(ncsdHdr['offsets'][0] * MEDIA_BLOCK_SIZE)
+  if ncsdHdr['lengths'][args.partition] == 0:
+    print("No partition number {:d}.".format(args.partition));
+    exit(-2)
+  
+  f.seek(ncsdHdr['offsets'][args.partition] * MEDIA_BLOCK_SIZE)
   ncchHdr = makeNcchHdrDictFromTuple(ncchHdrStruct.unpack(f.read(ncchHdrStruct.size)))
-
-with open(args.exheader, 'rb') as f:
-  sysCtrlInfo = makeSysCtrlInfoDictFromTuple(sysCtrlInfoStruct.unpack(f.read(sysCtrlInfoStruct.size)))
-  accCtrlInfo = makeAccCtrlInfoDictFromTuple(accCtrlInfoStruct.unpack(f.read(accCtrlInfoStruct.size)))
+  if ncchHdr['exhdrsize'] == 0x400: # no exheader
+    sysCtrlInfo = makeSysCtrlInfoDictFromTuple(sysCtrlInfoStruct.unpack(f.read(sysCtrlInfoStruct.size)))
+    accCtrlInfo = makeAccCtrlInfoDictFromTuple(accCtrlInfoStruct.unpack(f.read(accCtrlInfoStruct.size)))
   
 populateRSFFile()
 if args.romfsdir != None:
