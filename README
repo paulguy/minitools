@@ -168,3 +168,16 @@ videonow_dec.c, videonow_encode.sh
   
   The videonow_encode.sh script is just a small example for how to use ffmpeg to
   encode the videos in to something reasonably watchable.
+
+256to
+  Converts Marathon .256 chunks extracted from the Mac Shapes resource fork
+  data.  Outputs indexed TGA files.  For some reason they don't seem to work in
+  The GIMP but imagemagick can open them, so you can always just convert them to
+  something else.  Make it with 'make', use it by passing a file to it.  It'll
+  output a bunch of data for you as well.  process.sh will process all files
+  named *.raw in the current directory (you'll need to fix the path to 256to.)
+  and put the output of each in to its own directory with the output saved to a
+  report.txt.  cleanup.sh will just delete all these, but you should be careful
+  to just run it within the same directory it's in with nothing else, because it
+  just deletes all *.tga, *.txt files and all directories within the directory
+  it is run in.
