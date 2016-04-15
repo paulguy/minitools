@@ -52,6 +52,10 @@ int main(int argc, char **argv) {
       palette[j * 4 + 3] = 255;
     }
 
+    if(img->flags | IMAGE_TRANSPARENCY) {
+      palette[0 + 3] = 0;
+    }
+
     for(j = 0; j < images; j++) {
       snprintf(tgafile, sizeof(tgafile), "pal%05hd_gfx%05hd.tga", i, j);
 
