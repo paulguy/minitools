@@ -181,3 +181,11 @@ videonow_dec.c, videonow_encode.sh
   to just run it within the same directory it's in with nothing else, because it
   just deletes all *.tga, *.txt files and all directories within the directory
   it is run in.
+
+3dmazeto
+  Another texture ripper.  This one much simpler.  It will convert some of the
+  non-BMP resources from the 3D Maze screensaver (Maybe others, I don't know
+  what program this format is associateed with...) in to TGA.  Like the last
+  one, the TGA files don't open in the GIMP so just convert them to PNG or
+  something that supports alphas with imagemagick convert.  The signature for
+  these files is "A3 A2 A1 A0" starting at byte 0.

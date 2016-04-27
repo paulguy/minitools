@@ -1,0 +1,11 @@
+4 bytes - A3 A2 A1 A0
+4 bytes - width?
+4 bytes - height?
+4 bytes - 8
+4 bytes - 1
+4 bytes - compressed data size (= size)
+1 * 4 * 256 - 256 entry array of 4 byte arrays of R, G, B, A?
+size bytes - compressed data
+read a byte
+  if = 0, read 1 more byte, read that number bytes in to array
+  if > 0, repeat next byte N-2 times in to array
