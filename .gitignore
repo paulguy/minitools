@@ -4,3 +4,4 @@ unscale
 *.ass
 *.mp4
 *.png
+__pycache__

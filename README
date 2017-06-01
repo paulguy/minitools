@@ -189,3 +189,10 @@ videonow_dec.c, videonow_encode.sh
   one, the TGA files don't open in the GIMP so just convert them to PNG or
   something that supports alphas with imagemagick convert.  The signature for
   these files is "A3 A2 A1 A0" starting at byte 0.
+
+barex
+  Extract Prey Evil .bar files.
+
+ps.py
+  Requires python 3.5.  Prints a graph once per second representing CPU usage
+  per core.  Rounding errors make its output a bit inconsistent.
