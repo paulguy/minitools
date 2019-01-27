@@ -206,3 +206,8 @@ artex.py
   Extracts all Duke Nukem 3D ART found in a directory.  Requires a PALETTE.DAT
   and will import a NAMES.H to give useful filenames to tiles.  Writes files out
   as paletted BMPs.
+
+export_palettes.py
+  Extracts palettes from a Duke Nukem 3D PALETTE.DAT and LOOKUP.DAT and writes
+  them all out to .txt format.  They import to mtPaint, maybe others, to apply
+  the game's alternate palettes to its art.

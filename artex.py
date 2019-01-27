@@ -93,8 +93,8 @@ def writeBMP(name, width, height, palette, data):
         stride = stride + 4
     widthDiff = stride - width
     with open("{:s}.bmp".format(name), 'wb') as bmpFile:
-        bmpFile.write(struct.pack("<ccIHHIIHHHH", b'B', b'M',
-            26 + 768 + (stride * height), 0, 0, 26 + 768, 12, width, height, 1, 8))
+        bmpFile.write(struct.pack("<ccIHHIIIIHH", b'B', b'M',
+            30 + 768 + (stride * height), 0, 0, 30 + 768, 16, width, height, 1, 8))
         for color in palette:
             bmpFile.write(struct.pack("<BBB", color[0], color[1], color[2]))
         for i in range(height):
