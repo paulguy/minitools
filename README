@@ -196,3 +196,13 @@ barex
 ps.py
   Requires python 3.5.  Prints a graph once per second representing CPU usage
   per core.  Rounding errors make its output a bit inconsistent.
+
+grpex
+  Extracts all files from a Duke Nukem 3D .GRP file.  Had trouble finding one
+  that I could use that was simple and compiled readily so I wrote one.  It's
+  very basic and has few features other than extracting all files.
+
+artex.py
+  Extracts all Duke Nukem 3D ART found in a directory.  Requires a PALETTE.DAT
+  and will import a NAMES.H to give useful filenames to tiles.  Writes files out
+  as paletted BMPs.
