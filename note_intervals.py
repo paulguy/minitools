@@ -127,7 +127,7 @@ NOTES = (
     Note("G", 11),
     Note("G♯", 0)
 )
-MAXNOTE = 12
+MAXNOTE = 11
 
 """
 None   - return any
@@ -204,13 +204,13 @@ def quiz(max_dist : int):
 
 def main(max_dist : int):
     if max_dist < 1 or max_dist > MAXNOTE:
-        print("Distance must be between 1 and 11.")
+        print("Distance must be between 1 and {:d}.".format(MAXNOTE))
         return
     random.seed()
     print("Q/q to quit")
     try:
         while True:
-            quiz(max_dist);
+            quiz(max_dist)
     except EndQuiz:
         pass
 
