@@ -93,10 +93,11 @@ def writeBMP(name, width, height, palette, data):
         stride = stride + 4
     widthDiff = stride - width
     with open("{:s}.bmp".format(name), 'wb') as bmpFile:
-        bmpFile.write(struct.pack("<ccIHHIIIIHH", b'B', b'M',
-            30 + 768 + (stride * height), 0, 0, 30 + 768, 16, width, height, 1, 8))
+        bmpFile.write(struct.pack("<ccIHHI IIIHHIIIIII", b'B', b'M',
+            54 + 1024 + (stride * height), 0, 0, 54 + 1024,
+            40, width, height, 1, 8, 0, 0, 1000, 1000, 256, 256))
         for color in palette:
-            bmpFile.write(struct.pack("<BBB", color[0], color[1], color[2]))
+            bmpFile.write(struct.pack("<BBBx", color[0], color[1], color[2]))
         for i in range(height):
             bmpFile.write(data[i*width:(i+1)*width])
             bmpFile.write(pad[0:widthDiff])
@@ -141,9 +142,10 @@ def extractFile(filename, start, end, palette, names):
 
             name = ""
             try:
-                name = names[start + dim[0]]
+                name = "{:04d}_{:s}".format(start + dim[0],
+                                            names[start + dim[0]])
             except KeyError:
-                name = "TILE{:04d}".format(start + dim[0])
+                name = "{:04d}".format(start + dim[0])
 
             print(" -> Writing out {:s}...".format(name))
             writeBMP(name, width, height, palette, data)
