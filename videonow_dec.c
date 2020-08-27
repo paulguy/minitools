@@ -65,9 +65,9 @@ typedef enum {
 
 read_buffer *read_buffer_open(char *f, int size);
 void read_buffer_close(read_buffer *b);
-inline int read_buffer_next(read_buffer *b);
-inline int read_buffer_eof(read_buffer *b);
-inline int read_buffer_step_back(read_buffer *b);
+int read_buffer_next(read_buffer *b);
+int read_buffer_eof(read_buffer *b);
+int read_buffer_step_back(read_buffer *b);
 
 FrameState eat_leadin(read_buffer *b);
 FrameState eat_front_porch(read_buffer *b, framedata *frame);
@@ -93,13 +93,13 @@ int main(int argc, char **argv) {
   
   fileext = strrchr(argv[1], '.');
   int fileNameLen;
-  if(fileext == NULL || fileext == argv[1] || fileext+1 == '\0') {
+  if(fileext == NULL || fileext == argv[1] || fileext[1] == '\0') {
     fileNameLen = strlen(argv[1]) + 1;
   } else {
     fileNameLen = fileext - argv[1] + 1;
   }
   char fileName[fileNameLen];
-  if(fileext == NULL || fileext == argv[1] || fileext+1 == '\0') {
+  if(fileext == NULL || fileext == argv[1] || fileext[1] == '\0') {
     strncpy(fileName, argv[1], fileNameLen);
   } else {
     memcpy(fileName, argv[1], fileNameLen - 1);
@@ -279,7 +279,7 @@ void read_buffer_close(read_buffer *b) {
   free(b);
 }
 
-inline int read_buffer_next(read_buffer *b) {
+int read_buffer_next(read_buffer *b) {
   int bytesread;
   
   if(b->eof != 0) {
@@ -309,15 +309,15 @@ inline int read_buffer_next(read_buffer *b) {
   return(b->buffer[b->cursor - 1]);
 }
 
-inline int read_buffer_eof(read_buffer *b) {
+int read_buffer_eof(read_buffer *b) {
   return(b->eof);
 }
 
-inline int read_buffer_step_back(read_buffer *b) {
+int read_buffer_step_back(read_buffer *b) {
   int bytesread;
   
   if(b->cursor == 0) {  // worst case, we need to completely refill the buffer
-    if(lseek(b->f, -sizeof(int), SEEK_CUR) < 0) {
+    if(fseek(b->f, -sizeof(int), SEEK_CUR) < 0) {
       fprintf(stderr, "read_buffer_step_back: Couldn't seek: %s\n", strerror(errno));
       return(-1);
     }
@@ -388,7 +388,7 @@ FrameState eat_front_porch(read_buffer *b, framedata *frame) {
       }
       fprintf(stderr, "eat_front_porch: Unexpected word type in front porch %08X.\n",
               ret);
-      fprintf(stderr, "%d %d %d %d %d\n", b->size, b->filled, b->cursor, lseek(b->f, 0, SEEK_CUR), frame->bytesread);
+      fprintf(stderr, "%d %d %d %d %d\n", b->size, b->filled, b->cursor, fseek(b->f, 0, SEEK_CUR), frame->bytesread);
       return(FRAME_STATE_UNEXPECTED_VALUE);
     }
     
@@ -421,7 +421,7 @@ FrameState get_frame(read_buffer *b, framedata *frame) {
       }
       fprintf(stderr, "get_frame: Unexpected word type in active region %08X.\n",
               ret);
-      fprintf(stderr, "%d %d %d %d %d\n", b->size, b->filled, b->cursor, lseek(b->f, 0, SEEK_CUR), frame->bytesread);
+      fprintf(stderr, "%d %d %d %d %d\n", b->size, b->filled, b->cursor, fseek(b->f, 0, SEEK_CUR), frame->bytesread);
       return(FRAME_STATE_UNEXPECTED_VALUE);
     }      
       
