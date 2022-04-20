@@ -211,3 +211,10 @@ export_palettes.py
   Extracts palettes from a Duke Nukem 3D PALETTE.DAT and LOOKUP.DAT and writes
   them all out to .txt format.  They import to mtPaint, maybe others, to apply
   the game's alternate palettes to its art.
+
+blocktext.py
+  Outputs text in a dumb blocky font to the terminal.
+  USAGE: ./blocktext.py "<text>"
+  All text must be in 1 argument, so if it's multiple words or would otherwise
+  be split by the terminal, it should be quoted.  Also only supports the
+  printable 7 bit ASCII character codes.
