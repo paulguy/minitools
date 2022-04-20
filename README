@@ -218,3 +218,5 @@ blocktext.py
   All text must be in 1 argument, so if it's multiple words or would otherwise
   be split by the terminal, it should be quoted.  Also only supports the
   printable 7 bit ASCII character codes.
+
+  If no arguments are given, read from stdin.

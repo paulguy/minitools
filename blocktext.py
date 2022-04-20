@@ -2,7 +2,7 @@
 
 from array import array
 from itertools import repeat
-from sys import argv
+from sys import argv, stdin
 
 FONT = (
     # ..#.
@@ -395,29 +395,50 @@ CHARS = ' 🬀🬃🬄🬏🬐🬓▌🬁🬂🬅🬆🬑🬒🬔🬕🬇🬈�
 
 def text_to_block(text):
     gfx = list()
+    gfx.append(list())
+    line = 0
 
     for c in text:
-        if ord(c) < ord(' ') or \
+        if c == '\n':
+            if len(gfx[line]) % 2 == 1:
+                gfx[line].append(0)
+            gfx.append(list())
+            line += 1
+        elif ord(c) < ord(' ') or \
            ord(c) > ord('~'):
-            gfx.extend(FONT[0])
+            gfx[line].extend(FONT[0])
         else:
-            gfx.extend(FONT[ord(c) - ord(' ') + 1])
+            gfx[line].extend(FONT[ord(c) - ord(' ') + 1])
 
-    if len(gfx) % 2 == 1:
-        gfx.append(0)
+    totallen = 0
+    for lnum, line in enumerate(gfx):
+        totallen += len(line) // 2 + 1
+        for num in range(len(line) // 2):
+            gfx[lnum][num] = gfx[lnum][num * 2] | (gfx[lnum][num * 2 + 1] << 3)
+        gfx[lnum] = gfx[lnum][:len(gfx[lnum]) // 2]
+    totallen -= 1
 
-    out = array('I', repeat(0, len(gfx) // 2))
-    for num in range(len(gfx) // 2):
-        out[num] = gfx[num * 2] | (gfx[num * 2 + 1] << 3)
-
-    outtext = array('u', repeat(' ', len(out)))
-    for num, val in enumerate(out):
-        outtext[num] = CHARS[val]
+    outtext = array('u', repeat(' ', totallen))
+    pos = 0
+    for lnum, line in enumerate(gfx):
+        for num, val in enumerate(line):
+            outtext[pos + num] = CHARS[val]
+        if lnum < len(gfx) - 1:
+            pos += len(line)
+            outtext[pos] = '\n'
+            pos += 1
 
     return outtext.tounicode()
 
 def main():
-    print(text_to_block(argv[1]))
+    if len(argv) > 1:
+        print(text_to_block(argv[1]))
+    else:
+        while True:
+            text = stdin.read()
+            if len(text) == 0:
+                break
+            print(text_to_block(text))
 
 if __name__ == '__main__':
     main()
