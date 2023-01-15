@@ -194,8 +194,11 @@ barex
   Extract Prey Evil .bar files.
 
 ps.py
-  Requires python 3.5.  Prints a graph once per second representing CPU usage
-  per core.  Rounding errors make its output a bit inconsistent.
+  Updated version that displays a bit nicer, and works with larger numbers of
+  CPUs/cores/threads, up to 36.
+  Displays a graph of CPU usage per core, and displays the most heavily loaded
+  core to the end, filling the unused time in the graph with /es.  This will
+  try to display a useful range, as indicated by the percentage on the right.
 
 grpex
   Extracts all files from a Duke Nukem 3D .GRP file.  Had trouble finding one
@@ -220,3 +223,21 @@ blocktext.py
   printable 7 bit ASCII character codes.
 
   If no arguments are given, read from stdin.
+
+uncdk
+  Deobfuscates CDK videos from some Blockbuster CD.  I imagine other things
+  used it.  Seems to be some macromedia director thing so maybe some common
+  thing for throwing together promo materials.  Just compile it, then run it
+  on the file you want to deobfuscate.  It does the operation in-place so make
+  sure to back it up in case it doesn't work.
+
+iomemdec.py
+  USAGE: ./iomemdec.py [-h] <filename>
+
+  Reads and displays a potentially useful view of /proc/iomem by displaying
+  the start and size of each entry.
+
+  The filename can be /proc/iomem if run as root or otherwise with privilege
+  to read the values from /proc/iomem, otherwise you'll just get all 0s.
+
+  -h can be passed for more human-readable sizes (KiB, MiB, GiB, TiB).

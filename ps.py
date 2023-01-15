@@ -1,7 +1,23 @@
+#!/usr/bin/env python
+
 import subprocess
 import time
+import array
+import itertools
+import copy
 
-letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+symbols='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+orig_graphline = array.array('u', itertools.repeat(' ', 100))
+graphfree = array.array('u', itertools.repeat('/', 100))
+
+def scale(num):
+  mul = 1 
+
+  while num * mul < 50:
+    mul *= 2
+
+  return mul
 
 while True:
   start = time.clock_gettime(time.CLOCK_MONOTONIC_RAW)
@@ -30,27 +46,21 @@ while True:
       cores[core] = 0.0
     cores[core] += percent
 
+  maxcpu = len(cores)
+  totalpercent /= maxcpu
+  for item in cores:
+      cores[item] /= maxcpu
+
   order = sorted(cores, key=lambda x: cores[x])
-  for item in range(max(order) + 1):
-    diff = 0
-    if item in order:
-      if totalpercent <= 1.0:
-        diff = round(cores[order[item]] * 100)
-      elif totalpercent <= 10.0:
-        diff = round(cores[order[item]] * 10)
-      else:
-        diff = round(cores[order[item]])
 
-    if order[item] < 10:
-      print("{core:>{space}}".format(core=order[item], space=diff), end='')
-    else:
-      print("{core:>{space}}".format(core=letters[order[item] - 10], space=diff), end='')
+  graphline = copy.copy(orig_graphline)
+  diff = 0
+  for item in range(max(order)):
+    mul = scale(totalpercent)
+    diff += int(cores[order[item]] * mul)
+    graphline[diff] = symbols[order[item]]
 
-  if totalpercent <= 1.0:
-    print("{ends:>{space}}".format(ends='| 1%', space=round(1.0 - totalpercent)));
-  elif totalpercent <= 10.0:
-    print("{ends:>{space}}".format(ends='| 10%', space=round(10.0 - totalpercent)));
-  else:
-    print("{ends:>{space}}".format(ends='| 100%', space=round(100.0 - totalpercent)));
+  print(graphline[:diff+1].tounicode(), end='')
+  print("{}| {percent}%".format(graphfree[:100-(diff + 1)].tounicode(), percent=100/mul));
 
   time.sleep(1 - (time.clock_gettime(time.CLOCK_MONOTONIC_RAW) - start))
