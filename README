@@ -241,3 +241,13 @@ iomemdec.py
   to read the values from /proc/iomem, otherwise you'll just get all 0s.
 
   -h can be passed for more human-readable sizes (KiB, MiB, GiB, TiB).
+
+vid2aud.py
+  USAGE: ./vid2aud.py <file> [file] [file] ...
+
+  ULTRA simple converter from video to audio, mostly good for youtube and
+  probably not _really_ complete for this purpose.  It'll put vorbis and opus
+  in to .ogg and aac in to .m4a.  Even if it's just an audio file, it'll still
+  remux it in a hopefully most-compatible container for portable device.
+
+  Requires ffmpeg, ffprobe.
