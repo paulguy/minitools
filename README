@@ -251,3 +251,12 @@ vid2aud.py
   remux it in a hopefully most-compatible container for portable device.
 
   Requires ffmpeg, ffprobe.
+
+make-convergence-hook.py
+  USAGE: ./make-convergence-hook.py
+
+  Outputs a shader hook for mpv which will produce a shader for adjusting
+  RGB convergence/alignment.  Made to adjust out oddities in an old CRT TV
+  without having to get in to the TV itself.  This is very raw so you pretty
+  much need to adjust the parameters in the code.  The default size is 4x4 but
+  with some adjustment, any size can probably be used.
