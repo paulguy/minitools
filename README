@@ -260,3 +260,23 @@ make-convergence-hook.py
   without having to get in to the TV itself.  This is very raw so you pretty
   much need to adjust the parameters in the code.  The default size is 4x4 but
   with some adjustment, any size can probably be used.
+
+./godot_object_scanner.py
+  USAGE: ./godot_object_scanner.py check <filename>
+         ./godot_object_scanner.py list <filenmame>
+         ./godot_object_scanner.py dedup <filename> [filename]
+
+  check
+   Tries to check linkage of the file and for references to missing items.
+   All the other operations will start with this operation.
+
+  list
+   List all "paths" to objects (resources, nodes).
+
+  dedup
+   Determine duplicate resources and fold them in to one.  This will also
+   deduplicate any intentionally "unique" resources!  Maybe at some point
+   there may be a way to add exceptions.  If no second filename is given, it
+   will only list the duplicates, otherwise it will also output to a new file,
+   however, it will try not to write to the same file as a backup should be
+   kept in case it ruins the file or does something unsavory.
