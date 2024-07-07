@@ -154,6 +154,9 @@ class GMA:
             maps += f" {gmap.name}\n"
         return maps
 
+    def get_url(self):
+        return f"https://steamcommunity.com/sharedfiles/filedetails/?id={self.workshop_id}"
+
     def __str__(self):
         timestamp = time.asctime(time.gmtime(self.timestamp))
         tags = ""
@@ -167,6 +170,7 @@ class GMA:
             files += f" {file}\n"
         maps = self.mapnames()
         return f"Workshop ID: {self.workshop_id}\n" \
+               f"URL: {self.get_url()}\n" \
                f"Size: {human_readable_size(self.size)}\nVersion: {self.version}\n" \
                f"Steam ID?: {self.steamid}\nTimestamp: {timestamp}\n" \
                f"Name: {self.name}\nAuthor: {self.author}\nType: {self.type}\n" \
