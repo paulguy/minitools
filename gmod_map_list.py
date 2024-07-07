@@ -201,6 +201,7 @@ def get_gma_paths(steampath : str):
 
 def main(path, do_list, do_only):
     paths = get_gma_paths(path)
+    gmas = []
 
     for path in paths:
         if len(do_only) == 0 or path[1] in do_only:
@@ -209,13 +210,18 @@ def main(path, do_list, do_only):
             else:
                 gma = GMA(path[0].open('rb'), path[1])
                 gma.close()
-                if do_list:
-                    print(f"{gma.workshop_id} {gma.name} {human_readable_size(gma.size)}")
-                    maps = gma.mapnames()
-                    if len(maps) > 0:
-                        print(f"Maps:\n{maps}")
-                else:
-                    print(gma)
+                gmas.append(gma)
+
+    gmas = sorted(gmas, key=lambda g: g.workshop_id)
+
+    for gma in gmas:
+        if do_list:
+            print(f"{gma.workshop_id} {gma.name} {human_readable_size(gma.size)}")
+            maps = gma.mapnames()
+            if len(maps) > 0:
+                print(f"Maps:\n{maps}")
+        else:
+            print(gma)
 
 def usage(app):
     print(f"USAGE: {app} [--list | --steampath[=]<path to steam> | <workshop ID>]...")
