@@ -9,6 +9,8 @@ import time
 import json
 from dataclasses import dataclass
 import re
+import array
+import itertools
 
 # TODO: handle lzma-compressed _legacy.bin files
 
@@ -17,31 +19,6 @@ DEFAULT_STEAM_PATH = pathlib.PurePath(".local", "share", "Steam")
 
 GAMEID = 4000
 STEAM_WORKSHOP_PATH = pathlib.PurePath("steamapps", "workshop", "content", str(GAMEID))
-
-READ_STRING_START_BUF = 256
-
-# possibly wrap read and read_string to allow buffering when reading LZMA
-def read_string(file : io.BufferedReader):
-    retbuf = b''
-    bufread = READ_STRING_START_BUF
-    totalsize = 0
-    pos = file.tell()
-
-    while True:
-        buf = file.read(bufread)
-        try:
-            null = buf.index(b'\0')
-            totalsize += null
-            retbuf += buf[:null]
-            break
-        except ValueError:
-            pass
-        retbuf += buf
-        totalsize += bufread
-        bufread *= 2 # maybe a bit aggressive?
-
-    file.seek(pos+totalsize+1, os.SEEK_SET)
-    return retbuf.decode('utf-8')
 
 # probably don't need to go further
 SIZE_UNITS = ('b', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB')
@@ -77,7 +54,7 @@ class GMAEntry:
     def __str__(self):
         return f"Name: {self.name}  Size: {human_readable_size(self.size)}"
 
-class GMA:
+class GMAFile:
     # much from <https://github.com/Facepunch/gmad>
 
     GMA_MAGIC = ord('G') | (ord('M') << 8) | (ord('A') << 16) | (ord('D') << 24)
@@ -88,12 +65,99 @@ class GMA:
     GMA_FAKE_NUM = struct.Struct("<I")
     GMA_FILE_ENT = struct.Struct("<qI")
 
-    def __init__(self, file : io.BufferedReader, workshop_id : int):
-        self.file = file
-        self.workshop_id = workshop_id
+    READ_BUFFER_SIZE = 32768
+
+    def read(self, count : int) -> bytes:
+        if self.file is None:
+            return b''
+
+        retbuf = b''
+
+        # try to empty what's in the buffer first
+        if self.filled > 0:
+            if count < self.filled:
+                retbuf = self.buffer[:count].tobytes()
+                # would be faster to do a ring buffer but mehhhhhhh
+                self.buffer[:self.filled-count] = self.buffer[count:self.filled]
+                self.filled -= count
+            else:
+                retbuf = self.buffer[:self.filled].tobytes()
+                self.filled = 0
+
+        # then read the rest from the file
+        if len(retbuf) < count:
+            buf = self.file.read(count - len(retbuf))
+            retbuf += buf
+
+        return retbuf
+
+    def read_string(self) -> str:
+        if self.file is None:
+            return ''
+
+        retbuf = b''
+        have_read = 0
+        found = False
+
+        while True:
+            try:
+                # find the null in the buffer this time around
+                null = self.buffer[:self.filled].index(0)
+                retbuf += self.buffer[:null].tobytes()
+                # move the unread buffer contents to the beginning
+                self.buffer[:self.filled-(null+1)] = self.buffer[null+1:self.filled]
+                self.filled -= null + 1
+                found = True
+            except ValueError:
+                # none found, just empty it
+                retbuf += self.buffer[:self.filled].tobytes()
+                self.filled = 0
+
+            if found:
+                break
+
+            # refill the buffer
+            buf = self.file.read(len(self.buffer))
+            if len(buf) == 0:
+                return retbuf
+
+            self.buffer[:len(buf)] = array.array('B', buf)
+            self.filled = len(buf)
+
+        return retbuf.decode('utf-8')
+
+    def tell(self) -> int:
+        if self.file is None:
+            return 0
+
+        return self.file.tell() - self.filled
+
+    def close(self):
+        if self.file is not None:
+            self.file.close()
+            self.file = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        self.file.close()
+        return False
+
+    # TODO: Functions for reading out files from gma?
+
+    def __init__(self, path : pathlib.PurePath):
+        self.file = pathlib.Path(path).open('rb')
+        self.buffer = array.array('B', itertools.repeat(0, self.READ_BUFFER_SIZE))
+        self.filled = 0
+
+        self.files = []
+        self.maps = []
+
+        self.workshop_id = int(path.parent.name)
         self.size = os.fstat(self.file.fileno()).st_size
 
-        magic, version, steamid, timestamp = self.GMA_HDR.unpack(self.file.read(self.GMA_HDR.size))
+        magic, version, steamid, timestamp = self.GMA_HDR.unpack(self.read(self.GMA_HDR.size))
         if magic != self.GMA_MAGIC:
             raise ValueError("Bad GMA file magic")
 
@@ -103,31 +167,12 @@ class GMA:
 
         if self.version > 1:
             # apparently just, a string that needs to be read past
-            _ = read_string(self.file)
+            _ = self.read_string()
 
-        self.name = read_string(self.file)
-        desc = read_string(self.file)
-        self.author = read_string(self.file)
-        self.addon_ver, = self.GMA_ADDON_VER.unpack(self.file.read(self.GMA_ADDON_VER.size)) # unused, i guess
-
-        self.files = []
-        self.maps = []
-        filenum = 1
-        filepos = 0
-        while True:
-            fakenum, = self.GMA_FAKE_NUM.unpack(self.file.read(self.GMA_FAKE_NUM.size))
-            if fakenum == 0:
-                break
-            name = read_string(self.file)
-            size, crc = self.GMA_FILE_ENT.unpack(self.file.read(self.GMA_FILE_ENT.size))
-            entry = GMAEntry(filenum, name, filepos, size, crc)
-            self.files.append(entry)
-            if entry.is_map():
-                self.maps.append(entry)
-            filenum += 1
-            filepos += size
-
-        self.fileblock = self.file.tell()
+        self.name = self.read_string()
+        desc = self.read_string()
+        self.author = self.read_string()
+        self.addon_ver, = self.GMA_ADDON_VER.unpack(self.read(self.GMA_ADDON_VER.size)) # unused, i guess
 
         desc_json = json.loads(desc)
         self.description = ""
@@ -146,10 +191,22 @@ class GMA:
         except KeyError:
             pass
  
-    def close(self):
-        if self.file is not None:
-            self.file.close()
-            self.file = None
+        filenum = 1
+        filepos = 0
+        while True:
+            fakenum, = self.GMA_FAKE_NUM.unpack(self.read(self.GMA_FAKE_NUM.size))
+            if fakenum == 0:
+                break
+            name = self.read_string()
+            size, crc = self.GMA_FILE_ENT.unpack(self.read(self.GMA_FILE_ENT.size))
+            entry = GMAEntry(filenum, name, filepos, size, crc)
+            self.files.append(entry)
+            if entry.is_map():
+                self.maps.append(entry)
+            filenum += 1
+            filepos += size
+
+        self.fileblock = self.file.tell()
 
     def mapnames(self):
         maps = ""
@@ -178,6 +235,7 @@ class GMA:
                f"Steam ID?: {self.steamid}\nTimestamp: {timestamp}\n" \
                f"Name: {self.name}\nAuthor: {self.author}\nType: {self.type}\n" \
                f"Tags: {tags}\nDescription: {self.description}\n" \
+               f"Addon Version (unused?): {self.addon_ver}\n" \
                f"Files:\n{files}\nMaps:\n{maps}"
 
 def get_gma_paths(steampath : str):
@@ -186,45 +244,45 @@ def get_gma_paths(steampath : str):
 
     for item in modspath.iterdir():
         if not (item.is_dir() and item.name.isdecimal()):
-            paths.append(("{item.name} is probably not a mod directory (non-numeric name).", 0))
+            paths.append(f"{item.name} is probably not a mod directory (non-numeric name).")
             continue
 
         gmas = list(item.glob("*.gma", case_sensitive=False))
         if len(gmas) == 0:
-            paths.append(("No GMA files.", int(item.name)))
+            paths.append(f"No GMA files in {item.name}.")
             continue
 
         if len(gmas) > 1:
-            paths.append(("Multiple GMA files.", int(item.name)))
+            paths.append(f"Multiple GMA files in {item.name}.")
             continue
 
-        paths.append((gmas[0], int(item.name)))
+        paths.append(gmas[0])
 
     return paths
 
-def main(path, do_list, do_only):
+def main(path, do_list=False, do_only=[]):
     paths = get_gma_paths(path)
     gmas = []
 
     for path in paths:
-        if len(do_only) == 0 or path[1] in do_only:
-            if isinstance(path[0], str):
-                print(f"{path[1]} {path[0]}")
-            else:
-                gma = GMA(path[0].open('rb'), path[1])
-                gma.close()
-                gmas.append(gma)
-
-    gmas = sorted(gmas, key=lambda g: g.workshop_id)
-
-    for gma in gmas:
-        if do_list:
-            print(f"{gma.workshop_id} {gma.name} {human_readable_size(gma.size)}")
-            maps = gma.mapnames()
-            if len(maps) > 0:
-                print(f"Maps:\n{maps}")
+        if isinstance(path, str):
+            print(path)
         else:
-            print(gma)
+            workshop_id = int(path.parent.name)
+            if len(do_only) == 0 or workshop_id in do_only:
+                gmas.append((workshop_id, path))
+
+    gmas = sorted(gmas, key=lambda path: path[0])
+
+    for path in gmas:
+        with GMAFile(path[1]) as gma:
+            if do_list:
+                print(f"{gma.workshop_id} {gma.name} {human_readable_size(gma.size)}")
+                maps = gma.mapnames()
+                if len(maps) > 0:
+                    print(f"Maps:\n{maps}")
+            else:
+                print(gma)
 
 def usage(app):
     print(f"USAGE: {app} [--list | --steampath[=]<path to steam> | <workshop ID>]...")
