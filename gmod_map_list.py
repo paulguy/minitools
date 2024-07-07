@@ -75,7 +75,7 @@ class GMAEntry:
         return self.map_re.match(self.name)
 
     def __str__(self):
-        return f"Name: {self.name}  self: {human_readable_size(self.size)}"
+        return f"Name: {self.name}  Size: {human_readable_size(self.size)}"
 
 class GMA:
     # much from <https://github.com/Facepunch/gmad>
