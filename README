@@ -261,7 +261,7 @@ make-convergence-hook.py
   much need to adjust the parameters in the code.  The default size is 4x4 but
   with some adjustment, any size can probably be used.
 
-./godot_object_scanner.py
+godot_object_scanner.py
   USAGE: ./godot_object_scanner.py check <filename>
          ./godot_object_scanner.py list <filenmame>
          ./godot_object_scanner.py dedup <filename> [filename]
@@ -280,3 +280,17 @@ make-convergence-hook.py
    will only list the duplicates, otherwise it will also output to a new file,
    however, it will try not to write to the same file as a backup should be
    kept in case it ruins the file or does something unsavory.
+
+gmod_map_list.py
+  USAGE: ./gmod_map_list.py [--list | --steampath[=]<path to steam> | <workshop ID>]...
+
+  List all gma files and information provided by them from the steam workshop
+  directory.  A list of workshop IDs can be given to get information on only
+  specific items.
+
+  --list
+   Enable reduced mode that just lists ID, name and map files.
+
+  --steampath
+   Provide the path to the directory steam is installed in, default is
+   .local/share/steam in whatever python determines is the home directory.
