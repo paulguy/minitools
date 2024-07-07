@@ -56,7 +56,10 @@ def human_readable_size(size : int):
         size //= 1024
         thousands += 1
 
-    return f"{size}.{thousandths}{SIZE_UNITS[thousands]}"
+    if thousands == 0:
+        return f"{size}{SIZE_UNITS[thousands]}"
+    else:
+        return f"{size}.{thousandths}{SIZE_UNITS[thousands]}"
 
 @dataclass
 class GMAEntry:
