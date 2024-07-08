@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import re
 import array
 import itertools
+import lzma
 
 # TODO: handle lzma-compressed _legacy.bin files
 
@@ -65,6 +66,7 @@ class GMAFile:
     GMA_FAKE_NUM = struct.Struct("<I")
     GMA_FILE_ENT = struct.Struct("<qI")
 
+    # stuff for avoiding seeking for the LZMA decompressor
     READ_BUFFER_SIZE = 32768
 
     def read(self, count : int) -> bytes:
@@ -146,8 +148,12 @@ class GMAFile:
 
     # TODO: Functions for reading out files from gma?
 
-    def __init__(self, path : pathlib.PurePath):
-        self.file = pathlib.Path(path).open('rb')
+    def __init__(self, path : pathlib.PurePath, compressed : bool=False):
+        if compressed:
+            self.file = lzma.LZMAFile(path)
+        else:
+            self.file = pathlib.Path(path).open('rb')
+
         self.buffer = array.array('B', itertools.repeat(0, self.READ_BUFFER_SIZE))
         self.filled = 0
 
@@ -174,23 +180,27 @@ class GMAFile:
         self.author = self.read_string()
         self.addon_ver, = self.GMA_ADDON_VER.unpack(self.read(self.GMA_ADDON_VER.size)) # unused, i guess
 
-        desc_json = json.loads(desc)
         self.description = ""
-        try:
-            self.description = desc_json['description']
-        except KeyError:
-            pass
         self.type = ""
-        try:
-            self.type = desc_json['type']
-        except KeyError:
-            pass
         self.tags = ""
         try:
-            self.tags = desc_json['tags']
-        except KeyError:
-            pass
- 
+            desc_json = json.loads(desc)
+            try:
+                self.description = desc_json['description']
+            except KeyError:
+                pass
+            try:
+                self.type = desc_json['type']
+            except KeyError:
+                pass
+            try:
+                self.tags = desc_json['tags']
+            except KeyError:
+                pass
+        except json.decoder.JSONDecodeError:
+            # very old maps seem not to have JSON
+            self.description = desc
+
         filenum = 1
         filepos = 0
         while True:
@@ -248,8 +258,14 @@ def get_gma_paths(steampath : str):
             continue
 
         gmas = list(item.glob("*.gma", case_sensitive=False))
+        gmas.extend(item.glob("*_legacy.bin", case_sensitive=False))
+
         if len(gmas) == 0:
-            paths.append(f"No GMA files in {item.name}.")
+            try:
+                _ = item.iterdir().__next__()
+                paths.append(f"No GMA files in {item.name}.")
+            except StopIteration:
+                paths.append(f"Empty direcotry in {item.name}.")
             continue
 
         if len(gmas) > 1:
@@ -275,7 +291,11 @@ def main(path, do_list=False, do_only=[]):
     gmas = sorted(gmas, key=lambda path: path[0])
 
     for path in gmas:
-        with GMAFile(path[1]) as gma:
+        compressed = False
+        if path[1].name.endswith("_legacy.bin"):
+            compressed = True
+
+        with GMAFile(path[1], compressed) as gma:
             if do_list:
                 print(f"{gma.workshop_id} {gma.name} {human_readable_size(gma.size)}")
                 maps = gma.mapnames()
