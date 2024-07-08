@@ -24,6 +24,9 @@ STEAM_WORKSHOP_PATH = pathlib.PurePath("steamapps", "workshop", "content", str(G
 # probably don't need to go further
 SIZE_UNITS = ('b', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB')
 
+# 1MB seems good
+READ_SIZE = 1024*1024
+
 def human_readable_size(size : int):
     thousands = 0
     thousandths = 0
@@ -216,7 +219,27 @@ class GMAFile:
             filenum += 1
             filepos += size
 
-        self.fileblock = self.file.tell()
+        self.filenum = 0
+        self.filepos = -1
+
+    def read_file_data(self, maxread=-1):
+        if self.filepos < 0:
+            if self.filenum == len(self.files):
+                return None
+            self.filepos = 0
+            return self.files[self.filenum].name
+
+        to_read = self.files[self.filenum].size - self.filepos
+        if maxread >= 0 and maxread < to_read:
+            to_read = maxread
+
+        ret = self.read(to_read)
+        self.filepos += len(ret)
+        if self.filepos == self.files[self.filenum].size:
+            self.filenum += 1
+            self.filepos = -1
+
+        return ret
 
     def mapnames(self):
         maps = ""
@@ -276,7 +299,7 @@ def get_gma_paths(steampath : str):
 
     return paths
 
-def main(path, do_list=False, do_only=[]):
+def main(path, do_list=False, do_dump=False, do_only=[]):
     paths = get_gma_paths(path)
     gmas = []
 
@@ -304,6 +327,23 @@ def main(path, do_list=False, do_only=[]):
             else:
                 print(gma)
 
+            if do_dump:
+                curfile = None
+                while True:
+                    data = gma.read_file_data(READ_SIZE)
+                    if data is None:
+                        if curfile is not None:
+                            curfile.close()
+                        break
+                    elif isinstance(data, str):
+                        if curfile is not None:
+                            curfile.close()
+                        extract_path = pathlib.Path(path[1].parent.name, pathlib.Path(data))
+                        extract_path.parent.mkdir(parents=True, exist_ok=True)
+                        curfile = extract_path.open('wb')
+                    else:
+                        curfile.write(data)
+
 def usage(app):
     print(f"USAGE: {app} [--list | --steampath[=]<path to steam> | <workshop ID>]...")
 
@@ -311,6 +351,7 @@ if __name__ == '__main__':
     argv = sys.argv[1:]
     do_usage = False
     do_list = False
+    do_dump = False
     do_only = []
     path = pathlib.Path.home().joinpath(DEFAULT_STEAM_PATH)
 
@@ -320,16 +361,17 @@ if __name__ == '__main__':
             arg = argv[0][2:]
             if arg == 'list':
                 do_list = True
-                argv = argv[1:]
+            elif arg == 'dump':
+                do_dump = True
             elif arg.startswith('steampath='):
                 path = pathlib.PurePath(arg[10:])
-                argv = argv[1:]
             elif len(argv) > 1 and arg == 'steampath':
                 path = pathlib.PurePath(argv[1])
-                argv = argv[2:]
+                argv = argv[1:]
             else:
                 do_usage = True
                 break
+            argv = argv[1:]
         else:
             try:
                 do_only.append(int(argv[0]))
@@ -341,4 +383,4 @@ if __name__ == '__main__':
     if do_usage:
         usage(sys.argv[0])
     else:
-        main(path, do_list, do_only)
+        main(path, do_list, do_dump, do_only)

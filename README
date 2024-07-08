@@ -291,6 +291,10 @@ gmod_map_list.py
   --list
    Enable reduced mode that just lists ID, name and map files.
 
+  --dump
+   Extract all files to disk.  Probably want to specify specific IDs otherwise
+   it'll extract all of your addons.
+
   --steampath
    Provide the path to the directory steam is installed in, default is
    .local/share/steam in whatever python determines is the home directory.
