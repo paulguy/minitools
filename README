@@ -302,8 +302,15 @@ gmod_map_list.py
 dn1gfx.py
   USAGE: ./dn1gfx.py <filename>
 
-  Convert a Duke Nukum/Nukem 1 DN1 tile graphics file to a PNG.  Requires
-  pillow.
+  Install:
+   virtualenv <path to venv>
+   source <path to venv>/bin/activate
+   pip install pillow
+
+  Convert a Duke Nukum/Nukem 1 DN1 tile graphics file to an indexed PNG.
+  Requires pillow.
 
   Will output a JSON with the header data too.  Giving it back the JSON with
-  the PNG present will return back a DN1.
+  the PNG present will return back a DN1.  The PNG should still be indexed
+  with the same palette in the same order (most graphics packages which are
+  good for handling indexed graphics should respect this).
