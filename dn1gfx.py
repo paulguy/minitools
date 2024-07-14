@@ -29,6 +29,68 @@ for c in COLORS:
 PAD_SIZE = 64
 
 class DN1:
+    def load_fullscreen_dn1(self, infile):
+        self.fullscreen = True
+        self.width = 320
+        self.height = 200
+        self.count = 1
+        self.data = array.array('B', itertools.repeat(0, 320*200))
+
+        infile.seek(0, os.SEEK_SET)
+
+        # low bit 0
+        plane = infile.read(len(self.data)//8)
+        pos = 0
+        for byte in plane:
+            self.data[pos] = (byte & 0x80) >> 7
+            self.data[pos+1] = (byte & 0x40) >> 6
+            self.data[pos+2] = (byte & 0x20) >> 5
+            self.data[pos+3] = (byte & 0x10) >> 4
+            self.data[pos+4] = (byte & 0x08) >> 3
+            self.data[pos+5] = (byte & 0x04) >> 2
+            self.data[pos+6] = (byte & 0x02) >> 1
+            self.data[pos+7] = (byte & 0x01)
+            pos += 8
+        # bit 1
+        plane = infile.read(len(self.data)//8)
+        pos = 0
+        for byte in plane:
+            self.data[pos] |= (byte & 0x80) >> 6
+            self.data[pos+1] |= (byte & 0x40) >> 5
+            self.data[pos+2] |= (byte & 0x20) >> 4
+            self.data[pos+3] |= (byte & 0x10) >> 3
+            self.data[pos+4] |= (byte & 0x08) >> 2
+            self.data[pos+5] |= (byte & 0x04) >> 1
+            self.data[pos+6] |= (byte & 0x02)
+            self.data[pos+7] |= (byte & 0x01) << 1
+            pos += 8
+        # bit 2
+        plane = infile.read(len(self.data)//8)
+        pos = 0
+        for byte in plane:
+            self.data[pos] |= (byte & 0x80) >> 5
+            self.data[pos+1] |= (byte & 0x40) >> 4
+            self.data[pos+2] |= (byte & 0x20) >> 3
+            self.data[pos+3] |= (byte & 0x10) >> 2
+            self.data[pos+4] |= (byte & 0x08) >> 1
+            self.data[pos+5] |= (byte & 0x04)
+            self.data[pos+6] |= (byte & 0x02) << 1
+            self.data[pos+7] |= (byte & 0x01) << 2
+            pos += 8
+        # bit 3
+        plane = infile.read(len(self.data)//8)
+        pos = 0
+        for byte in plane:
+            self.data[pos] |= (byte & 0x80) >> 4
+            self.data[pos+1] |= (byte & 0x40) >> 3
+            self.data[pos+2] |= (byte & 0x20) >> 2
+            self.data[pos+3] |= (byte & 0x10) >> 1
+            self.data[pos+4] |= (byte & 0x08)
+            self.data[pos+5] |= (byte & 0x04) << 1
+            self.data[pos+6] |= (byte & 0x02) << 2
+            self.data[pos+7] |= (byte & 0x01) << 3
+            pos += 8
+
     def load_from_dn1(self, path):
         with open(path, 'rb') as infile:
             infile.seek(0, os.SEEK_END)
@@ -37,6 +99,10 @@ class DN1:
 
             self.count, width_bytes, self.height = HDR.unpack(infile.read(HDR.size))
             if self.count == 0 or width_bytes == 0 or self.height == 0 or self.count * width_bytes * self.height > filesize:
+                if filesize == 32000:
+                    print("Maybe fullscreen graphic?")
+                    self.load_fullscreen_dn1(infile)
+                    return
                 raise ValueError("File header indicates an invalid size, maybe you tried to load the wrong kind of file?")
 
             self.width = width_bytes * 8
@@ -132,6 +198,7 @@ class DN1:
  
     def __init__(self, path : pathlib.Path):
         self.dn1 = False
+        self.fullscreen = False
 
         if path.suffix.lower() == '.dn1':
             self.dn1 = True
@@ -143,6 +210,7 @@ class DN1:
             self.count = dn1json['count']
             self.width = dn1json['width']
             self.height = dn1json['height']
+            self.fullscreen = dn1json['fullscreen']
             self.load_image(dn1json['filename'])
         else:
             raise ValueError("Couldn't determine what type of file is being loaded, file must be .json or .dn1")
@@ -152,15 +220,75 @@ class DN1:
         outjson = f"{path}.json"
 
         image = Image.frombytes('P', (self.width, self.height * self.count), self.data.tobytes())
-        image.putpalette(PALETTE, 'RGBA')
+        if self.fullscreen:
+            image.putpalette(PALETTE[4:], 'RGBA')
+        else:
+            image.putpalette(PALETTE, 'RGBA')
         image.save(outpng, 'PNG')
 
-        dn1json = json.dumps({'filename': outpng, 'count': self.count, 'width': self.width, 'height': self.height})
+        dn1json = json.dumps({'filename': outpng,
+                              'count': self.count,
+                              'width': self.width,
+                              'height': self.height,
+                              'fullscreen': self.fullscreen})
         with open(outjson, 'w') as outfile:
             outfile.write(dn1json)
 
+    def save_fullscreen_dn1(self, path : pathlib.Path):
+        with open(path, 'wb') as outfile:
+            plane = array.array('B', itertools.repeat(0, 320*200//8))
+            # low bit 0
+            for i in range(len(plane)):
+                plane[i] = (self.data[i*8] & 0x01) << 7
+                plane[i] |= (self.data[i*8+1] & 0x01) << 6
+                plane[i] |= (self.data[i*8+2] & 0x01) << 5
+                plane[i] |= (self.data[i*8+3] & 0x01) << 4
+                plane[i] |= (self.data[i*8+4] & 0x01) << 3
+                plane[i] |= (self.data[i*8+5] & 0x01) << 2
+                plane[i] |= (self.data[i*8+6] & 0x01) << 1
+                plane[i] |= (self.data[i*8+7] & 0x01)
+            plane.tofile(outfile)
+            # bit 1
+            for i in range(len(plane)):
+                plane[i] = (self.data[i*8] & 0x02) << 6
+                plane[i] |= (self.data[i*8+1] & 0x02) << 5
+                plane[i] |= (self.data[i*8+2] & 0x02) << 4
+                plane[i] |= (self.data[i*8+3] & 0x02) << 3
+                plane[i] |= (self.data[i*8+4] & 0x02) << 2
+                plane[i] |= (self.data[i*8+5] & 0x02) << 1
+                plane[i] |= (self.data[i*8+6] & 0x02)
+                plane[i] |= (self.data[i*8+7] & 0x02) >> 1
+            plane.tofile(outfile)
+            # bit 2
+            for i in range(len(plane)):
+                plane[i] = (self.data[i*8] & 0x04) << 5
+                plane[i] |= (self.data[i*8+1] & 0x04) << 4
+                plane[i] |= (self.data[i*8+2] & 0x04) << 3
+                plane[i] |= (self.data[i*8+3] & 0x04) << 2
+                plane[i] |= (self.data[i*8+4] & 0x04) << 1
+                plane[i] |= (self.data[i*8+5] & 0x04)
+                plane[i] |= (self.data[i*8+6] & 0x04) >> 1
+                plane[i] |= (self.data[i*8+7] & 0x04) >> 2
+            plane.tofile(outfile)
+            # bit 3
+            for i in range(len(plane)):
+                plane[i] = (self.data[i*8] & 0x08) << 4
+                plane[i] |= (self.data[i*8+1] & 0x08) << 3
+                plane[i] |= (self.data[i*8+2] & 0x08) << 2
+                plane[i] |= (self.data[i*8+3] & 0x08) << 1
+                plane[i] |= (self.data[i*8+4] & 0x08)
+                plane[i] |= (self.data[i*8+5] & 0x08) >> 1
+                plane[i] |= (self.data[i*8+6] & 0x08) >> 2
+                plane[i] |= (self.data[i*8+7] & 0x08) >> 3
+            plane.tofile(outfile)
+
+            # fixed size, no padding needed
+
     def save_dn1(self, path : pathlib.Path):
-        outdn1 = f"{path}.DN1" # all caps because it's how it was
+        outdn1 = pathlib.Path(f"{path}.DN1") # all caps because it's how it was
+        if self.fullscreen:
+            self.save_fullscreen_dn1(outdn1)
+            return
         width_bytes = self.width // 8
 
         with open(outdn1, 'wb') as outfile:
