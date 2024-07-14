@@ -307,8 +307,8 @@ dn1gfx.py
    source <path to venv>/bin/activate
    pip install pillow
 
-  Convert a Duke Nukum/Nukem 1 DN1 tile or background graphics file to an
-  indexed PNG.  Requires pillow.
+  Convert a Duke Nukum/Nukem 1 DN1 tile or background or cutscene graphics
+  file to an indexed PNG.  Requires pillow.
 
   Will output a JSON with the header data too.  Giving it back the JSON with
   the PNG present will return back a DN1.  The PNG should still be indexed

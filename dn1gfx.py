@@ -34,7 +34,7 @@ class DN1:
         self.width = 320
         self.height = 200
         self.count = 1
-        self.data = array.array('B', itertools.repeat(0, 320*200))
+        self.data = array.array('B', itertools.repeat(0, self.width*self.height))
 
         infile.seek(0, os.SEEK_SET)
 
@@ -91,6 +91,105 @@ class DN1:
             self.data[pos+7] |= (byte & 0x01) << 3
             pos += 8
 
+    def load_background_dn1(self, infile):
+        self.background = True
+        self.width = 208
+        self.height = 160
+        self.count = 1
+        self.data = array.array('B', itertools.repeat(0, self.width*self.height))
+
+        width_tiles = self.width // 16 # tile width
+
+        # no need to seek?
+
+        # similar to below, but ignore alpha
+        colors = array.array('B', itertools.repeat(0, 16))
+        pos = 0
+        for i in range(self.height // 16):
+            # read for width tiles, for whole tile height and each tile row is 10 bytes
+            rowdata = infile.read(width_tiles * 16 * 10)
+            for j in range(16): # tile height
+                for k in range(width_tiles):
+                    offset = (k * 16 * 10) + (j * 10)
+                    # tile left byte
+                    # first byte ignored
+                    # low bit 0
+                    colors[0] = (rowdata[offset + 1] & 0x80) >> 7
+                    colors[1] = (rowdata[offset + 1] & 0x40) >> 6
+                    colors[2] = (rowdata[offset + 1] & 0x20) >> 5
+                    colors[3] = (rowdata[offset + 1] & 0x10) >> 4
+                    colors[4] = (rowdata[offset + 1] & 0x08) >> 3
+                    colors[5] = (rowdata[offset + 1] & 0x04) >> 2
+                    colors[6] = (rowdata[offset + 1] & 0x02) >> 1
+                    colors[7] = (rowdata[offset + 1] & 0x01)
+                    # bit 1
+                    colors[0] |= (rowdata[offset + 2] & 0x80) >> 6
+                    colors[1] |= (rowdata[offset + 2] & 0x40) >> 5
+                    colors[2] |= (rowdata[offset + 2] & 0x20) >> 4
+                    colors[3] |= (rowdata[offset + 2] & 0x10) >> 3
+                    colors[4] |= (rowdata[offset + 2] & 0x08) >> 2
+                    colors[5] |= (rowdata[offset + 2] & 0x04) >> 1
+                    colors[6] |= (rowdata[offset + 2] & 0x02)
+                    colors[7] |= (rowdata[offset + 2] & 0x01) << 1
+                    # bit 2
+                    colors[0] |= (rowdata[offset + 3] & 0x80) >> 5
+                    colors[1] |= (rowdata[offset + 3] & 0x40) >> 4
+                    colors[2] |= (rowdata[offset + 3] & 0x20) >> 3
+                    colors[3] |= (rowdata[offset + 3] & 0x10) >> 2
+                    colors[4] |= (rowdata[offset + 3] & 0x08) >> 1
+                    colors[5] |= (rowdata[offset + 3] & 0x04)
+                    colors[6] |= (rowdata[offset + 3] & 0x02) << 1
+                    colors[7] |= (rowdata[offset + 3] & 0x01) << 2
+                    # bit 3
+                    colors[0] |= (rowdata[offset + 4] & 0x80) >> 4
+                    colors[1] |= (rowdata[offset + 4] & 0x40) >> 3
+                    colors[2] |= (rowdata[offset + 4] & 0x20) >> 2
+                    colors[3] |= (rowdata[offset + 4] & 0x10) >> 1
+                    colors[4] |= (rowdata[offset + 4] & 0x08)
+                    colors[5] |= (rowdata[offset + 4] & 0x04) << 1
+                    colors[6] |= (rowdata[offset + 4] & 0x02) << 2
+                    colors[7] |= (rowdata[offset + 4] & 0x01) << 3
+                    # tile right byte
+                    # first byte ignored
+                    # low bit 0
+                    colors[8] = (rowdata[offset + 6] & 0x80) >> 7
+                    colors[9] = (rowdata[offset + 6] & 0x40) >> 6
+                    colors[10] = (rowdata[offset + 6] & 0x20) >> 5
+                    colors[11] = (rowdata[offset + 6] & 0x10) >> 4
+                    colors[12] = (rowdata[offset + 6] & 0x08) >> 3
+                    colors[13] = (rowdata[offset + 6] & 0x04) >> 2
+                    colors[14] = (rowdata[offset + 6] & 0x02) >> 1
+                    colors[15] = (rowdata[offset + 6] & 0x01)
+                    # bit 1
+                    colors[8] |= (rowdata[offset + 7] & 0x80) >> 6
+                    colors[9] |= (rowdata[offset + 7] & 0x40) >> 5
+                    colors[10] |= (rowdata[offset + 7] & 0x20) >> 4
+                    colors[11] |= (rowdata[offset + 7] & 0x10) >> 3
+                    colors[12] |= (rowdata[offset + 7] & 0x08) >> 2
+                    colors[13] |= (rowdata[offset + 7] & 0x04) >> 1
+                    colors[14] |= (rowdata[offset + 7] & 0x02)
+                    colors[15] |= (rowdata[offset + 7] & 0x01) << 1
+                    # bit 2
+                    colors[8] |= (rowdata[offset + 8] & 0x80) >> 5
+                    colors[9] |= (rowdata[offset + 8] & 0x40) >> 4
+                    colors[10] |= (rowdata[offset + 8] & 0x20) >> 3
+                    colors[11] |= (rowdata[offset + 8] & 0x10) >> 2
+                    colors[12] |= (rowdata[offset + 8] & 0x08) >> 1
+                    colors[13] |= (rowdata[offset + 8] & 0x04)
+                    colors[14] |= (rowdata[offset + 8] & 0x02) << 1
+                    colors[15] |= (rowdata[offset + 8] & 0x01) << 2
+                    # bit 3
+                    colors[8] |= (rowdata[offset + 9] & 0x80) >> 4
+                    colors[9] |= (rowdata[offset + 9] & 0x40) >> 3
+                    colors[10] |= (rowdata[offset + 9] & 0x20) >> 2
+                    colors[11] |= (rowdata[offset + 9] & 0x10) >> 1
+                    colors[12] |= (rowdata[offset + 9] & 0x08)
+                    colors[13] |= (rowdata[offset + 9] & 0x04) << 1
+                    colors[14] |= (rowdata[offset + 9] & 0x02) << 2
+                    colors[15] |= (rowdata[offset + 9] & 0x01) << 3
+                    self.data[pos:pos+16] = colors[:]
+                    pos += 16 # 2 bytes per tile
+
     def load_from_dn1(self, path):
         with open(path, 'rb') as infile:
             infile.seek(0, os.SEEK_END)
@@ -99,7 +198,11 @@ class DN1:
 
             self.count, width_bytes, self.height = HDR.unpack(infile.read(HDR.size))
             if self.count == 0 or width_bytes == 0 or self.height == 0 or self.count * width_bytes * self.height > filesize:
-                if filesize == 32000:
+                if filesize == 20803:
+                    print("Maybe background graphic?")
+                    self.load_background_dn1(infile)
+                    return
+                elif filesize == 32000:
                     print("Maybe fullscreen graphic?")
                     self.load_fullscreen_dn1(infile)
                     return
@@ -199,6 +302,7 @@ class DN1:
     def __init__(self, path : pathlib.Path):
         self.dn1 = False
         self.fullscreen = False
+        self.background = False
 
         if path.suffix.lower() == '.dn1':
             self.dn1 = True
@@ -211,6 +315,7 @@ class DN1:
             self.width = dn1json['width']
             self.height = dn1json['height']
             self.fullscreen = dn1json['fullscreen']
+            self.background = dn1json['background']
             self.load_image(dn1json['filename'])
         else:
             raise ValueError("Couldn't determine what type of file is being loaded, file must be .json or .dn1")
@@ -220,7 +325,7 @@ class DN1:
         outjson = f"{path}.json"
 
         image = Image.frombytes('P', (self.width, self.height * self.count), self.data.tobytes())
-        if self.fullscreen:
+        if self.fullscreen or self.background:
             image.putpalette(PALETTE[4:], 'RGBA')
         else:
             image.putpalette(PALETTE, 'RGBA')
@@ -230,13 +335,15 @@ class DN1:
                               'count': self.count,
                               'width': self.width,
                               'height': self.height,
-                              'fullscreen': self.fullscreen})
+                              'fullscreen': self.fullscreen,
+                              'background': self.background})
         with open(outjson, 'w') as outfile:
             outfile.write(dn1json)
 
     def save_fullscreen_dn1(self, path : pathlib.Path):
+        plane = array.array('B', itertools.repeat(0, 320*200//8))
+
         with open(path, 'wb') as outfile:
-            plane = array.array('B', itertools.repeat(0, 320*200//8))
             # low bit 0
             for i in range(len(plane)):
                 plane[i] = (self.data[i*8] & 0x01) << 7
@@ -284,10 +391,97 @@ class DN1:
 
             # fixed size, no padding needed
 
+    def save_background_dn1(self, path : pathlib.Path):
+        tilerow = array.array('B', itertools.repeat(0xFF, 10))
+
+        width_tiles = self.width // 16 # tile width
+        height_tiles = self.height // 16
+
+        with open(path, 'wb') as outfile:
+            outfile.write(b'\0\0\0') # starts with an empty 3 zeroes header
+
+            for i in range(height_tiles):
+                for j in range(width_tiles):
+                    for k in range(16):
+                        pos = (i * (self.width * 16)) + (j * 16) + (k * self.width)
+                        # 0 and 5 should stay 0xFF
+                        # low bit 0
+                        tilerow[1] = (self.data[pos] & 0x01) << 7
+                        tilerow[1] |= (self.data[pos+1] & 0x01) << 6
+                        tilerow[1] |= (self.data[pos+2] & 0x01) << 5
+                        tilerow[1] |= (self.data[pos+3] & 0x01) << 4
+                        tilerow[1] |= (self.data[pos+4] & 0x01) << 3
+                        tilerow[1] |= (self.data[pos+5] & 0x01) << 2
+                        tilerow[1] |= (self.data[pos+6] & 0x01) << 1
+                        tilerow[1] |= (self.data[pos+7] & 0x01)
+                        tilerow[6] = (self.data[pos+8] & 0x01) << 7
+                        tilerow[6] |= (self.data[pos+9] & 0x01) << 6
+                        tilerow[6] |= (self.data[pos+10] & 0x01) << 5
+                        tilerow[6] |= (self.data[pos+11] & 0x01) << 4
+                        tilerow[6] |= (self.data[pos+12] & 0x01) << 3
+                        tilerow[6] |= (self.data[pos+13] & 0x01) << 2
+                        tilerow[6] |= (self.data[pos+14] & 0x01) << 1
+                        tilerow[6] |= (self.data[pos+15] & 0x01)
+                        # bit 1
+                        tilerow[2] = (self.data[pos] & 0x02) << 6
+                        tilerow[2] |= (self.data[pos+1] & 0x02) << 5
+                        tilerow[2] |= (self.data[pos+2] & 0x02) << 4
+                        tilerow[2] |= (self.data[pos+3] & 0x02) << 3
+                        tilerow[2] |= (self.data[pos+4] & 0x02) << 2
+                        tilerow[2] |= (self.data[pos+5] & 0x02) << 1
+                        tilerow[2] |= (self.data[pos+6] & 0x02)
+                        tilerow[2] |= (self.data[pos+7] & 0x02) >> 1
+                        tilerow[7] = (self.data[pos+8] & 0x02) << 6
+                        tilerow[7] |= (self.data[pos+9] & 0x02) << 5
+                        tilerow[7] |= (self.data[pos+10] & 0x02) << 4
+                        tilerow[7] |= (self.data[pos+11] & 0x02) << 3
+                        tilerow[7] |= (self.data[pos+12] & 0x02) << 2
+                        tilerow[7] |= (self.data[pos+13] & 0x02) << 1
+                        tilerow[7] |= (self.data[pos+14] & 0x02)
+                        tilerow[7] |= (self.data[pos+15] & 0x02) >> 1
+                        # bit 2
+                        tilerow[3] = (self.data[pos] & 0x04) << 5
+                        tilerow[3] |= (self.data[pos+1] & 0x04) << 4
+                        tilerow[3] |= (self.data[pos+2] & 0x04) << 3
+                        tilerow[3] |= (self.data[pos+3] & 0x04) << 2
+                        tilerow[3] |= (self.data[pos+4] & 0x04) << 1
+                        tilerow[3] |= (self.data[pos+5] & 0x04)
+                        tilerow[3] |= (self.data[pos+6] & 0x04) >> 1
+                        tilerow[3] |= (self.data[pos+7] & 0x04) >> 2
+                        tilerow[8] = (self.data[pos+8] & 0x04) << 5
+                        tilerow[8] |= (self.data[pos+9] & 0x04) << 4
+                        tilerow[8] |= (self.data[pos+10] & 0x04) << 3
+                        tilerow[8] |= (self.data[pos+11] & 0x04) << 2
+                        tilerow[8] |= (self.data[pos+12] & 0x04) << 1
+                        tilerow[8] |= (self.data[pos+13] & 0x04)
+                        tilerow[8] |= (self.data[pos+14] & 0x04) >> 1
+                        tilerow[8] |= (self.data[pos+15] & 0x04) >> 2
+                        # bit 3
+                        tilerow[4] = (self.data[pos] & 0x08) << 4
+                        tilerow[4] |= (self.data[pos+1] & 0x08) << 3
+                        tilerow[4] |= (self.data[pos+2] & 0x08) << 2
+                        tilerow[4] |= (self.data[pos+3] & 0x08) << 1
+                        tilerow[4] |= (self.data[pos+4] & 0x08)
+                        tilerow[4] |= (self.data[pos+5] & 0x08) >> 1
+                        tilerow[4] |= (self.data[pos+6] & 0x08) >> 2
+                        tilerow[4] |= (self.data[pos+7] & 0x08) >> 3
+                        tilerow[9] = (self.data[pos+8] & 0x08) << 4
+                        tilerow[9] |= (self.data[pos+9] & 0x08) << 3
+                        tilerow[9] |= (self.data[pos+10] & 0x08) << 2
+                        tilerow[9] |= (self.data[pos+11] & 0x08) << 1
+                        tilerow[9] |= (self.data[pos+12] & 0x08)
+                        tilerow[9] |= (self.data[pos+13] & 0x08) >> 1
+                        tilerow[9] |= (self.data[pos+14] & 0x08) >> 2
+                        tilerow[9] |= (self.data[pos+15] & 0x08) >> 3
+                        tilerow.tofile(outfile)
+ 
     def save_dn1(self, path : pathlib.Path):
         outdn1 = pathlib.Path(f"{path}.DN1") # all caps because it's how it was
         if self.fullscreen:
             self.save_fullscreen_dn1(outdn1)
+            return
+        elif self.background:
+            self.save_background_dn1(outdn1)
             return
         width_bytes = self.width // 8
 
