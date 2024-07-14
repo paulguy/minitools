@@ -298,3 +298,9 @@ gmod_map_list.py
   --steampath
    Provide the path to the directory steam is installed in, default is
    .local/share/steam in whatever python determines is the home directory.
+
+dn1gfx.py
+  USAGE: ./dn1gfx.py <filename>
+
+  Convert a Duke Nukum/Nukem 1 DN1 tile graphics file to a PNG.  Requires
+  pillow.
