@@ -304,3 +304,6 @@ dn1gfx.py
 
   Convert a Duke Nukum/Nukem 1 DN1 tile graphics file to a PNG.  Requires
   pillow.
+
+  Will output a JSON with the header data too.  Giving it back the JSON with
+  the PNG present will return back a DN1.
