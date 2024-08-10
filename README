@@ -282,7 +282,8 @@ godot_object_scanner.py
    kept in case it ruins the file or does something unsavory.
 
 gmod_map_list.py
-  USAGE: ./gmod_map_list.py [--list | --steampath[=]<path to steam> | <workshop ID>]...
+  USAGE: ./gmod_map_list.py [--list | --dump | --steampath[=]<path to steam> | <workshop ID>]...
+         ./gmod_map_list.py [--steampath[=]<path to steam> | --collisions-scan]
 
   List all gma files and information provided by them from the steam workshop
   directory.  A list of workshop IDs can be given to get information on only
@@ -298,6 +299,12 @@ gmod_map_list.py
   --steampath
    Provide the path to the directory steam is installed in, default is
    .local/share/steam in whatever python determines is the home directory.
+
+  --collisions-scan
+   List all files from addons that are shared with other addons or mounted
+   game data.  This works on a lot of assumptions of how mounted content works
+   so it might not be super accurate, but it might be a useful guideline to
+   maybe narrow down some things.
 
 dn1gfx.py
   USAGE: ./dn1gfx.py <filename>

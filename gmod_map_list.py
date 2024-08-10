@@ -13,13 +13,48 @@ import array
 import itertools
 import lzma
 
-# TODO: handle lzma-compressed _legacy.bin files
-
 # relative to home
 DEFAULT_STEAM_PATH = pathlib.PurePath(".local", "share", "Steam")
 
-GAMEID = 4000
-STEAM_WORKSHOP_PATH = pathlib.PurePath("steamapps", "workshop", "content", str(GAMEID))
+GARRYSMOD_GAMEID = 4000
+STEAM_WORKSHOP_PATH = pathlib.PurePath("steamapps", "workshop", "content", str(GARRYSMOD_GAMEID))
+
+STEAM_APP_PATH = pathlib.PurePath("steamapps", "common")
+
+GARRYSMOD_PATH = pathlib.PurePath(STEAM_APP_PATH, "GarrysMod")
+
+DEPOTS_PATH = pathlib.PurePath("garrysmod", "cfg", "mountdepots.txt")
+
+STEAM_DEPOTS = {
+    "hl2": (220,"Half-Life 2"),
+    "cstrike": (240,"Counter-Strike"),
+    "dod": (300,"Day of Defeat"),
+    "tf": (440,"Team Fortress 2"),
+    "ep2": (420,"Half-Life 2: Episode 2"),
+    "episodic": (380,"Half-Life 2: Episode 1"),
+    "hl2mp": (320,"Half-Life 2: Deathmatch"),
+    "lostcoast": (340,"Half-Life 2: Lost Coast"),
+    "hl1": (280,"Half-Life: Source"),
+    "hl1mp": (360,"Half-life Deathmatch: Source"),
+    "zeno_clash": (22208,"Zeno Clash"),
+    "portal": (400,"Portal"),
+    "diprip": (17530,"D.I.P.R.I.P."),
+    "zps": (17500,"Zombie Panic! Source"),
+    "pvkii": (17570,"Pirates, Vikings and Knights II"),
+    "dystopia": (17580,"Dystopia"),
+    "insurgency": (17700,"Insurgency"),
+    "ageofchivalry": (17510,"Age of Chivalry"),
+    "left4dead2": (550,"Left 4 Dead 2"),
+    "left4dead": (500,"Left 4 Dead"),
+    "portal2": (620,"Portal 2"),
+    "swarm": (630,"Alien Swarm"),
+    "nucleardawn": (17710,"Nuclear Dawn"),
+    "dinodday": (70000,"Dino D-Day"),
+    "csgo": (730,"CS:Global Offensive")
+}
+
+# this is probably wrong
+UNPACKED_FILE_DIRS = {"maps", "materials", "modals", "particles", "shaders", "sound"}
 
 # probably don't need to go further
 SIZE_UNITS = ('b', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB')
@@ -42,33 +77,7 @@ def human_readable_size(size : int):
     else:
         return f"{size}.{thousandths}{SIZE_UNITS[thousands]}"
 
-@dataclass
-class GMAEntry:
-    num : int
-    name : str
-    pos : int
-    size : int
-    crc : int
-
-    map_re = re.compile(".+\\.bsp$")
-
-    def is_map(self):
-        return self.map_re.match(self.name)
-
-    def __str__(self):
-        return f"Name: {self.name}  Size: {human_readable_size(self.size)}"
-
-class GMAFile:
-    # much from <https://github.com/Facepunch/gmad>
-
-    GMA_MAGIC = ord('G') | (ord('M') << 8) | (ord('A') << 16) | (ord('D') << 24)
-
-    GMA_HDR = struct.Struct("<IBQQ")
-    GMA_ADDON_VER = struct.Struct("<I")
-    # seems to be an incrementing file number, but it isn't used this way
-    GMA_FAKE_NUM = struct.Struct("<I")
-    GMA_FILE_ENT = struct.Struct("<qI")
-
+class ValveFile:
     # stuff for avoiding seeking for the LZMA decompressor
     READ_BUFFER_SIZE = 32768
 
@@ -129,13 +138,26 @@ class GMAFile:
             self.buffer[:len(buf)] = array.array('B', buf)
             self.filled = len(buf)
 
-        return retbuf.decode('utf-8')
+        try:
+            retbuf = retbuf.decode('utf-8')
+        except UnicodeDecodeError as e:
+            print(retbuf)
+            raise e
+
+        return retbuf
 
     def tell(self) -> int:
         if self.file is None:
             return 0
 
         return self.file.tell() - self.filled
+
+    def seek(self, target, whence=0):
+        if whence == os.SEEK_CUR:
+            target -= self.filled
+        # could be more efficient and reuse potential existing buffer but it doesn't matter much
+        self.filled = 0
+        self.file.seek(target, whence)
 
     def close(self):
         if self.file is not None:
@@ -146,10 +168,9 @@ class GMAFile:
         return self
 
     def __exit__(self, exc_type, exc_value, exc_tb):
-        self.file.close()
+        if self.file is not None:
+            self.file.close()
         return False
-
-    # TODO: Functions for reading out files from gma?
 
     def __init__(self, path : pathlib.PurePath, compressed : bool=False):
         if compressed:
@@ -159,6 +180,38 @@ class GMAFile:
 
         self.buffer = array.array('B', itertools.repeat(0, self.READ_BUFFER_SIZE))
         self.filled = 0
+
+@dataclass
+class GMAEntry:
+    num : int
+    name : str
+    pos : int
+    size : int
+    crc : int
+
+    map_re = re.compile(".+\\.bsp$")
+
+    def is_map(self):
+        return self.map_re.match(self.name)
+
+    def __str__(self):
+        return f"Name: {self.name}  Size: {human_readable_size(self.size)}"
+
+class GMAFile(ValveFile):
+    # much from <https://github.com/Facepunch/gmad>
+
+    GMA_MAGIC = ord('G') | (ord('M') << 8) | (ord('A') << 16) | (ord('D') << 24)
+
+    GMA_HDR = struct.Struct("<IBQQ")
+    GMA_ADDON_VER = struct.Struct("<I")
+    # seems to be an incrementing file number, but it isn't used this way
+    GMA_FAKE_NUM = struct.Struct("<I")
+    GMA_FILE_ENT = struct.Struct("<qI")
+
+    def __init__(self, path : pathlib.PurePath, compressed : bool=False):
+        super().__init__(path, compressed)
+
+        self.path = path
 
         self.files = []
         self.maps = []
@@ -250,6 +303,9 @@ class GMAFile:
     def get_url(self):
         return f"https://steamcommunity.com/sharedfiles/filedetails/?id={self.workshop_id}"
 
+    def get_file_set(self):
+        return {file.name for file in self.files}
+
     def __str__(self):
         timestamp = time.asctime(time.gmtime(self.timestamp))
         tags = ""
@@ -270,6 +326,115 @@ class GMAFile:
                f"Tags: {tags}\nDescription: {self.description}\n" \
                f"Addon Version (unused?): {self.addon_ver}\n" \
                f"Files:\n{files}\nMaps:\n{maps}"
+
+class VPKFile(ValveFile):
+    # much from <https://developer.valvesoftware.com/wiki/VPK_(file_format)>
+
+    # this'll be super basic and only read the directory tree
+
+    VPK_MAGIC = 0x34 | (0x12 << 8) | (0xAA << 16) | (0x55 << 24)
+
+    VPK_MAGIC_HDR = struct.Struct("<II")
+    VPK_1_HDR = struct.Struct("<I")
+    VPK_2_HDR = struct.Struct("<IIIII")
+    VPK_ENTRY = struct.Struct("<IHHIIH")
+
+    def __init__(self, path : pathlib.PurePath):
+        # no compression here but the in-place string reading from a binary file is still useful
+        super().__init__(path)
+
+        self.files = set()
+
+        magic, version = self.VPK_MAGIC_HDR.unpack(self.read(self.VPK_MAGIC_HDR.size))
+
+        if magic != self.VPK_MAGIC:
+            # probably a data file, not a directory
+            self.files = None
+            return
+
+        if version == 1:
+            treesize = self.VPK_1_HDR.unpack(self.read(self.VPK_1_HDR.size))
+        elif version == 2:
+            # don't care about the signatures
+            treesize, _, _, _, _ = self.VPK_2_HDR.unpack(self.read(self.VPK_2_HDR.size))
+        else:
+            # unrecognized version, but a data file could in theory start with
+            # the header bytes so just act like nothing happened
+            self.files = None
+            return
+
+        while True:
+            extension = self.read_string()
+            if extension == "":
+                break
+            elif extension == " ":
+                extension = ""
+            else:
+                extension = f".{extension}"
+            while True:
+                path = self.read_string()
+                if path == "":
+                    break
+                elif path == " ":
+                    path = ""
+                else:
+                    path = f"{path}/"
+                while True:
+                    filename = self.read_string()
+                    if filename == "":
+                        break
+                    # just ignoring everything
+                    _, preloadBytes, archiveIndex, _, _, _ = self.VPK_ENTRY.unpack(self.read(self.VPK_ENTRY.size))
+                    # not clear on the docs here
+                    if preloadBytes > 0:
+                        self.seek(preloadBytes, os.SEEK_CUR)
+                    self.files.add(f"{path}{filename}{extension}")
+
+    def get_files_list(self):
+        return self.files
+
+def parse_acf_file(path : pathlib.PurePath):
+    root = {}
+
+    with pathlib.Path(path).open('r') as infile:
+        ln = 0
+
+        key = None
+        current = [root]
+        while True:
+            line = infile.readline()
+            if line == "":
+                break
+            line = line.strip()
+            ln += 1
+
+            while len(line) > 0:
+                if key == None:
+                    if line.startswith("\""):
+                        quote = line[1:].index("\"")
+                        key = line[1:quote+1]
+                        line = line[quote+2:].lstrip()
+                    elif line.startswith("}"):
+                        current = current[:-1]
+                        line = line[1:].lstrip()
+                    else:
+                        raise ValueError(f"Expected key in parsing ACF file ({ln}).")
+                else:
+                    if line.startswith("\""):
+                        quote = line[1:].index("\"")
+                        current[-1][key] = line[1:quote+1]
+                        line = line[quote+2:].lstrip()
+                    elif line.startswith("{"):
+                        # create a dict in the current dict
+                        current[-1][key] = {}
+                        # make the same new dict the current dict
+                        current.append(current[-1][key])
+                        line = line[1:].lstrip()
+                    else:
+                        raise ValueError(f"Expected value in parsing ACF file ({ln}).")
+                    key = None
+
+    return root
 
 def get_gma_paths(steampath : str):
     modspath = pathlib.Path(steampath, STEAM_WORKSHOP_PATH)
@@ -299,7 +464,7 @@ def get_gma_paths(steampath : str):
 
     return paths
 
-def main(path, do_list=False, do_dump=False, do_only=[]):
+def _get_gma_infos(path, do_only=[]):
     paths = get_gma_paths(path)
     gmas = []
 
@@ -311,7 +476,10 @@ def main(path, do_list=False, do_dump=False, do_only=[]):
             if len(do_only) == 0 or workshop_id in do_only:
                 gmas.append((workshop_id, path))
 
-    gmas = sorted(gmas, key=lambda path: path[0])
+    return sorted(gmas, key=lambda path: path[0])
+
+def get_gma_infos(path, do_list=False, do_dump=False, do_only=[]):
+    gmas = _get_gma_infos(path, do_only)
 
     for path in gmas:
         compressed = False
@@ -344,12 +512,157 @@ def main(path, do_list=False, do_dump=False, do_only=[]):
                     else:
                         curfile.write(data)
 
+class SteamDepot:
+    def __init__(self,
+                 depot_name : str,
+                 game_id : int,
+                 game_name : str,
+                 mounted : bool,
+                 path : pathlib.PurePath):
+        self.depot_name = depot_name
+        self.game_id = game_id
+        self.game_name = game_name
+        self.mounted = mounted
+        # not 100% sure on this one
+        self.path = path
+        self.files = []
+
+    def __hash__(self):
+        return hash(self.path)
+
+    def __str__(self):
+        return f"Depot: {self.depot_name}  ID: {self.game_id}  Name: {self.game_name}  Path: {self.path}  Files: {len(self.files)}"
+
+    def set_files(self, files : list[str] | set[str]):
+        self.files = set(files)
+
+    def get_files(self) -> set[str]:
+        return self.files
+
+def get_mounted_depots(steampath : pathlib.PurePath):
+    depotspath = pathlib.PurePath(steampath, GARRYSMOD_PATH, DEPOTS_PATH)
+
+    depotdata = parse_acf_file(depotspath)
+
+    # garry's mod is probably always mounted?
+    depots = [SteamDepot("garrysmod",
+                         GARRYSMOD_GAMEID,
+                         "Garry's Mod",
+                         True,
+                         pathlib.PurePath(steampath, GARRYSMOD_PATH, "garrysmod"))]
+
+    depotdict = depotdata["gamedepotsystem"]
+    for depot in depotdict.keys():
+        if int(depotdict[depot]) != 0:
+            depotinfo = STEAM_DEPOTS[depot]
+            acfpath = pathlib.Path(steampath, "steamapps", f"appmanifest_{depotinfo[0]}.acf")
+            depotdata = parse_acf_file(acfpath)
+            depots.append(SteamDepot(depot,
+                                     depotinfo[0],
+                                     depotinfo[1],
+                                     True,
+                                     pathlib.PurePath(steampath, STEAM_APP_PATH, depotdata["AppState"]["installdir"], depot)))
+
+    return depots
+
+def gather_files(path : pathlib.PurePath):
+    filelist = set()
+
+    for dirname in UNPACKED_FILE_DIRS:
+        for root, dirs, files in pathlib.Path(path, dirname).walk():
+            for file in files:
+                # get the relative path and join its directory parts back together
+                # in the same way as other gmod paths are
+                filelist.add('/'.join(pathlib.PurePath(root, file).relative_to(path).parts))
+
+    return filelist
+
+def list_depot(steampath : pathlib.PurePath, depot : SteamDepot):
+    depot.set_files(gather_files(depot.path))
+
+    newdepots = [depot]
+
+    for item in pathlib.Path(depot.path).glob("*.vpk", case_sensitive=False):
+        vpk = VPKFile(item)
+        files = vpk.get_files_list()
+        if files is None:
+            continue
+        newdepot = SteamDepot(depot.depot_name,
+                              depot.game_id,
+                              depot.game_name,
+                              True,
+                              pathlib.PurePath(depot.path, item))
+        newdepot.set_files(files)
+        newdepots.append(newdepot)
+
+    return newdepots
+
+def get_depots(steampath : pathlib.PurePath):
+    # main garrysmod VPKs
+    #filelists.update(_read_vpks("Garry's Mod", pathlib.Path(path, GARRYSMOD_PATH, "garrysmod")))
+
+    depots = get_mounted_depots(steampath)
+    newdepots = []
+    for depot in depots:
+        newdepots.extend(list_depot(steampath, depot))
+
+    return newdepots
+
+def collisions_scan(path, do_only=[]):
+    print("Gathering mounted files...")
+    depots = get_depots(path)
+
+    print("Gathering addon files...")
+    gmas = _get_gma_infos(path, do_only)
+
+    for path in gmas:
+        compressed = False
+        if path[1].name.endswith("_legacy.bin"):
+            compressed = True
+
+        with GMAFile(path[1], compressed) as gma:
+            # no dumping, so just close it right away
+            gma.close()
+
+            newdepot = SteamDepot(f"addon_{gma.workshop_id}",
+                                  gma.workshop_id,
+                                  gma.name,
+                                  False,
+                                  gma.path)
+            newdepot.set_files(gma.get_file_set())
+            depots.append(newdepot)
+
+    print("Finding collisions...")
+    collisions = {}
+    for num, depot1 in enumerate(depots):
+        for depot2 in depots[num+1:]:
+            intersection = depot1.files.intersection(depot2.files)
+            for item in intersection:
+                if item in collisions:
+                    collisions[item].add(depot1)
+                    collisions[item].add(depot2)
+                else:
+                    collisions[item] = {depot1, depot2}
+
+    for collision in collisions.keys():
+        addon = False
+        for depot in collisions[collision]:
+            if not depot.mounted:
+                addon = True
+        if addon:
+            print(f"File: {collision}")
+            for depot in collisions[collision]:
+                print(f" Source: {depot.game_name}  Path: {depot.path}")
+            print()
+
 def usage(app):
-    print(f"USAGE: {app} [--list | --steampath[=]<path to steam> | <workshop ID>]...")
+    print(f"USAGE: {app} [--list | --dump | --steampath[=]<path to steam> | <workshop ID>]...\n"
+          f"       {app} [--steampath[=]<path to steam> | --collisions-scan]")
 
 if __name__ == '__main__':
     argv = sys.argv[1:]
     do_usage = False
+    do_collisions = False
     do_list = False
     do_dump = False
     do_only = []
@@ -363,6 +676,8 @@ if __name__ == '__main__':
                 do_list = True
             elif arg == 'dump':
                 do_dump = True
+            elif arg == 'collisions-scan':
+                do_collisions = True
             elif arg.startswith('steampath='):
                 path = pathlib.PurePath(arg[10:])
             elif len(argv) > 1 and arg == 'steampath':
@@ -382,5 +697,7 @@ if __name__ == '__main__':
 
     if do_usage:
         usage(sys.argv[0])
+    elif do_collisions:
+        collisions_scan(path, do_only)
     else:
-        main(path, do_list, do_dump, do_only)
+        get_gma_infos(path, do_list, do_dump, do_only)
