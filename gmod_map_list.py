@@ -164,6 +164,9 @@ class ValveFile:
             self.file.close()
             self.file = None
 
+    def stat(self):
+        return os.stat(self.file.fileno())
+
     def __enter__(self):
         return self
 
@@ -208,6 +211,17 @@ class GMAFile(ValveFile):
     GMA_FAKE_NUM = struct.Struct("<I")
     GMA_FILE_ENT = struct.Struct("<qI")
 
+    SORTS = {
+        "id": ("ID", lambda x: x.workshop_id),
+        "size": ("Size", lambda x: x.size),
+        "updated": ("Last Updated Time", lambda x: x.filetime),
+        "published": ("Published Time", lambda x: x.timestamp),
+        "name": ("Name", lambda x: x.name),
+        "author": ("Author", lambda x: x.author),
+        "files": ("File Count", lambda x: len(x.files)),
+        "maps": ("Map Count", lambda x: len(x.maps))
+    }
+
     def __init__(self, path : pathlib.PurePath, compressed : bool=False):
         super().__init__(path, compressed)
 
@@ -217,7 +231,8 @@ class GMAFile(ValveFile):
         self.maps = []
 
         self.workshop_id = int(path.parent.name)
-        self.size = os.fstat(self.file.fileno()).st_size
+        stat = self.stat()
+        self.size = stat.st_size
 
         magic, version, steamid, timestamp = self.GMA_HDR.unpack(self.read(self.GMA_HDR.size))
         if magic != self.GMA_MAGIC:
@@ -226,6 +241,8 @@ class GMAFile(ValveFile):
         self.version = version
         self.steamid = steamid
         self.timestamp = timestamp
+
+        self.filetime = stat.st_ctime
 
         if self.version > 1:
             # apparently just, a string that needs to be read past
@@ -320,9 +337,11 @@ class GMAFile(ValveFile):
         maps = self.mapnames()
         return f"Workshop ID: {self.workshop_id}\n" \
                f"URL: {self.get_url()}\n" \
-               f"Size: {human_readable_size(self.size)}\nVersion: {self.version}\n" \
-               f"Steam ID?: {self.steamid}\nTimestamp: {timestamp}\n" \
-               f"Name: {self.name}\nAuthor: {self.author}\nType: {self.type}\n" \
+               f"Size: {human_readable_size(self.size)}\n" \
+               f"Last Updated Time: {time.asctime(time.localtime(self.filetime))}\n" \
+               f"Version: {self.version}\nSteam ID?: {self.steamid}\n" \
+               f"Timestamp: {timestamp}\nName: {self.name}\n" \
+               f"Author: {self.author}\nType: {self.type}\n" \
                f"Tags: {tags}\nDescription: {self.description}\n" \
                f"Addon Version (unused?): {self.addon_ver}\n" \
                f"Files:\n{files}\nMaps:\n{maps}"
@@ -470,48 +489,59 @@ def _get_gma_infos(path, do_only=[]):
 
     for path in paths:
         if isinstance(path, str):
+            # print errors
             print(path)
         else:
             workshop_id = int(path.parent.name)
             if len(do_only) == 0 or workshop_id in do_only:
                 gmas.append((workshop_id, path))
 
-    return sorted(gmas, key=lambda path: path[0])
+    return gmas
 
-def get_gma_infos(path, do_list=False, do_dump=False, do_only=[]):
-    gmas = _get_gma_infos(path, do_only)
+def get_gma_infos(path, do_list=False, do_dump=False, do_only=[], sort_list=[]):
+    gma_paths = _get_gma_infos(path, do_only)
+    gmas = []
 
-    for path in gmas:
+    for path in gma_paths:
         compressed = False
         if path[1].name.endswith("_legacy.bin"):
             compressed = True
 
-        with GMAFile(path[1], compressed) as gma:
-            if do_list:
-                print(f"{gma.workshop_id} {gma.name} {human_readable_size(gma.size)}")
-                maps = gma.mapnames()
-                if len(maps) > 0:
-                    print(f"Maps:\n{maps}")
-            else:
-                print(gma)
+        gma = GMAFile(path[1], compressed)
 
-            if do_dump:
-                curfile = None
-                while True:
-                    data = gma.read_file_data(READ_SIZE)
-                    if data is None:
-                        if curfile is not None:
-                            curfile.close()
-                        break
-                    elif isinstance(data, str):
-                        if curfile is not None:
-                            curfile.close()
-                        extract_path = pathlib.Path(path[1].parent.name, pathlib.Path(data))
-                        extract_path.parent.mkdir(parents=True, exist_ok=True)
-                        curfile = extract_path.open('wb')
-                    else:
-                        curfile.write(data)
+        if do_dump:
+            curfile = None
+            while True:
+                data = gma.read_file_data(READ_SIZE)
+                if data is None:
+                    if curfile is not None:
+                        curfile.close()
+                    break
+                elif isinstance(data, str):
+                    if curfile is not None:
+                        curfile.close()
+                    extract_path = pathlib.Path(path[1].parent.name, pathlib.Path(data))
+                    extract_path.parent.mkdir(parents=True, exist_ok=True)
+                    curfile = extract_path.open('wb')
+                else:
+                    curfile.write(data)
 
+        gma.close()
+
+        gmas.append(gma)
+
+    for sort in sort_list:
+        gmas = sorted(gmas, key=sort[1])
+
+    for gma in gmas:
+        if do_list:
+            print(f"{gma.workshop_id} {gma.name} {human_readable_size(gma.size)}")
+            maps = gma.mapnames()
+            if len(maps) > 0:
+                print(f"Maps:\n{maps}")
+        else:
+            print(gma)
+ 
 class SteamDepot:
     def __init__(self,
                  depot_name : str,
@@ -655,9 +685,23 @@ def collisions_scan(path, do_only=[]):
                 print(f" Source: {depot.game_name}  Path: {depot.path}")
             print()
 
+def make_sort_list(sort_list_string):
+    sort_list = []
+
+    for criteria in sort_list_string.split(","):
+        try:
+            sort_list.append(GMAFile.SORTS[criteria.lower()])
+        except KeyError:
+            raise ValueError("Invalid sort criteria: {criteria}")
+
+    return sort_list
+
 def usage(app):
-    print(f"USAGE: {app} [--list | --dump | --steampath[=]<path to steam> | <workshop ID>]...\n"
+    print(f"USAGE: {app} [--list | --sort[=]<criteria[,criteria,...]> | --dump | --steampath[=]<path to steam> | <workshop ID>]...\n"
           f"       {app} [--steampath[=]<path to steam> | --collisions-scan]")
+    print("\nSort criterias:\n")
+    for sort in GMAFile.SORTS.keys():
+        print(f"{sort} : {GMAFile.SORTS[sort][0]}")
 
 if __name__ == '__main__':
     argv = sys.argv[1:]
@@ -666,6 +710,7 @@ if __name__ == '__main__':
     do_list = False
     do_dump = False
     do_only = []
+    sort_list = []
     path = pathlib.Path.home().joinpath(DEFAULT_STEAM_PATH)
 
     # ultra simple args parsing
@@ -674,6 +719,11 @@ if __name__ == '__main__':
             arg = argv[0][2:]
             if arg == 'list':
                 do_list = True
+            elif arg == 'sort=':
+                sort_list = make_sort_list(arg[5:])
+            elif arg == 'sort':
+                sort_list = make_sort_list(argv[1])
+                argv = argv[1:]
             elif arg == 'dump':
                 do_dump = True
             elif arg == 'collisions-scan':
@@ -700,4 +750,4 @@ if __name__ == '__main__':
     elif do_collisions:
         collisions_scan(path, do_only)
     else:
-        get_gma_infos(path, do_list, do_dump, do_only)
+        get_gma_infos(path, do_list, do_dump, do_only, sort_list)
