@@ -719,7 +719,7 @@ if __name__ == '__main__':
             arg = argv[0][2:]
             if arg == 'list':
                 do_list = True
-            elif arg == 'sort=':
+            elif arg.startswith('sort='):
                 sort_list = make_sort_list(arg[5:])
             elif arg == 'sort':
                 sort_list = make_sort_list(argv[1])
