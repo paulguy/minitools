@@ -12,6 +12,7 @@ import re
 import array
 import itertools
 import lzma
+import hashlib
 
 # relative to home
 DEFAULT_STEAM_PATH = pathlib.PurePath(".local", "share", "Steam")
@@ -61,6 +62,19 @@ SIZE_UNITS = ('b', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB')
 
 # 1MB seems good
 READ_SIZE = 1024*1024
+
+@dataclass
+class FileHash():
+    size : int
+    digest : bytes
+
+    def __eq__(self, other):
+        return self.size == other.size and self.digest == other.digest
+
+type FileList_T = dict[str, FileHash]
+type DepotFileList_T = dict[str, FileList_T]
+
+SHA1_T = type(hashlib.sha1())
 
 def human_readable_size(size : int):
     thousands = 0
@@ -311,6 +325,26 @@ class GMAFile(ValveFile):
 
         return ret
 
+    def read_all_data(self, new_file_cb, data_cb, end_file_cb, priv):
+        # open an initial file
+        data = self.read_file_data(READ_SIZE)
+        if not new_file_cb(priv, data):
+            return
+
+        while True:
+            data = self.read_file_data(READ_SIZE)
+            if data is None:
+                end_file_cb(priv)
+                break
+            elif isinstance(data, str):
+                if not end_file_cb(priv):
+                    break
+                if not new_file_cb(priv, data):
+                    break
+            else:
+                if not data_cb(priv, data):
+                    break
+
     def mapnames(self):
         maps = ""
         for gmap in self.maps:
@@ -346,10 +380,21 @@ class GMAFile(ValveFile):
                f"Addon Version (unused?): {self.addon_ver}\n" \
                f"Files:\n{files}\nMaps:\n{maps}"
 
+@dataclass
+class VPKEntry():
+    archive : int # if 0x7FFF, the archive is the directory and archive_offset is relative to end of the tree
+    preload_pos : int
+    preload_bytes : int
+    archive_offset : int
+    archive_bytes : int
+
 class VPKFile(ValveFile):
     # much from <https://developer.valvesoftware.com/wiki/VPK_(file_format)>
 
     # this'll be super basic and only read the directory tree
+
+    DIRECTORY_SUFFIX = "_dir.vpk"
+    THIS_ARCHIVE = 0x7FFF
 
     VPK_MAGIC = 0x34 | (0x12 << 8) | (0xAA << 16) | (0x55 << 24)
 
@@ -362,7 +407,10 @@ class VPKFile(ValveFile):
         # no compression here but the in-place string reading from a binary file is still useful
         super().__init__(path)
 
-        self.files = set()
+        self.parent = path.parent
+        self.name = path.name[:-len(VPKFile.DIRECTORY_SUFFIX)]
+
+        self.files = {}
 
         magic, version = self.VPK_MAGIC_HDR.unpack(self.read(self.VPK_MAGIC_HDR.size))
 
@@ -372,10 +420,10 @@ class VPKFile(ValveFile):
             return
 
         if version == 1:
-            treesize = self.VPK_1_HDR.unpack(self.read(self.VPK_1_HDR.size))
+            self.treesize = self.VPK_1_HDR.unpack(self.read(self.VPK_1_HDR.size))
         elif version == 2:
             # don't care about the signatures
-            treesize, _, _, _, _ = self.VPK_2_HDR.unpack(self.read(self.VPK_2_HDR.size))
+            self.treesize, _, _, _, _ = self.VPK_2_HDR.unpack(self.read(self.VPK_2_HDR.size))
         else:
             # unrecognized version, but a data file could in theory start with
             # the header bytes so just act like nothing happened
@@ -402,15 +450,41 @@ class VPKFile(ValveFile):
                     filename = self.read_string()
                     if filename == "":
                         break
-                    # just ignoring everything
-                    _, preloadBytes, archiveIndex, _, _, _ = self.VPK_ENTRY.unpack(self.read(self.VPK_ENTRY.size))
-                    # not clear on the docs here
+                    _, preloadBytes, archiveIndex, entryOffset, entryLength, _ = self.VPK_ENTRY.unpack(self.read(self.VPK_ENTRY.size))
+                    self.files[f"{path}{filename}{extension}"] = VPKEntry(archiveIndex, self.tell(), preloadBytes, entryOffset, entryLength)
                     if preloadBytes > 0:
                         self.seek(preloadBytes, os.SEEK_CUR)
-                    self.files.add(f"{path}{filename}{extension}")
 
-    def get_files_list(self):
-        return self.files
+    def read_all_data(self, new_file_cb, data_cb, end_file_cb, priv):
+        for name in self.files.keys():
+            file = self.files[name]
+            new_file_cb(priv, name)
+            if file.preload_bytes > 0:
+                self.seek(file.preload_pos)
+                remaining = file.preload_bytes
+                while remaining > 0:
+                    to_read = remaining
+                    if to_read > READ_SIZE:
+                        to_read = READ_SIZE
+                    data = self.read(to_read)
+                    data_cb(priv, data)
+                    remaining -= len(data)
+            if file.archive_bytes > 0:
+                infile = self
+                if file.archive == VPKFile.THIS_ARCHIVE:
+                    self.seek(self.treesize + file.archive_offset)
+                else:
+                    infile = pathlib.Path(self.parent, f"{self.name}_{file.archive:03d}.vpk").open('rb')
+                    infile.seek(file.archive_offset)
+                remaining = file.archive_bytes
+                while remaining > 0:
+                    to_read = remaining
+                    if to_read > READ_SIZE:
+                        to_read = READ_SIZE
+                    data = infile.read(to_read)
+                    data_cb(priv, data)
+                    remaining -= len(data)
+            end_file_cb(priv)
 
 def parse_acf_file(path : pathlib.PurePath):
     root = {}
@@ -498,7 +572,35 @@ def _get_gma_infos(path, do_only=[]):
 
     return gmas
 
+@dataclass
+class DumpFileState():
+    path : pathlib.Path
+    file : io.BufferedWriter | None
+
+    def __init__(self, path : pathlib.PurePath):
+        self.path = path
+        self.file = None
+
+def dump_new_file_cb(priv, name):
+    extract_path = pathlib.Path(priv.path.parent.name, pathlib.Path(name))
+    extract_path.parent.mkdir(parents=True, exist_ok=True)
+    priv.file = extract_path.open('wb')
+
+    return True
+
+def dump_data_cb(priv, data):
+    priv.file.write(data)
+
+    return True
+
+def dump_end_file_cb(priv):
+    priv.file.close()
+
+    return True
+
 def get_gma_infos(path, do_list=False, do_dump=False, do_only=[], sort_list=[]):
+    # ugh big ugly do everything function
+
     gma_paths = _get_gma_infos(path, do_only)
     gmas = []
 
@@ -510,21 +612,8 @@ def get_gma_infos(path, do_list=False, do_dump=False, do_only=[], sort_list=[]):
         gma = GMAFile(path[1], compressed)
 
         if do_dump:
-            curfile = None
-            while True:
-                data = gma.read_file_data(READ_SIZE)
-                if data is None:
-                    if curfile is not None:
-                        curfile.close()
-                    break
-                elif isinstance(data, str):
-                    if curfile is not None:
-                        curfile.close()
-                    extract_path = pathlib.Path(path[1].parent.name, pathlib.Path(data))
-                    extract_path.parent.mkdir(parents=True, exist_ok=True)
-                    curfile = extract_path.open('wb')
-                else:
-                    curfile.write(data)
+            priv = DumpFileState(path[1])
+            gma.read_all_data(dump_new_file_cb, dump_data_cb, dump_end_file_cb, priv)
 
         gma.close()
 
@@ -541,7 +630,7 @@ def get_gma_infos(path, do_list=False, do_dump=False, do_only=[], sort_list=[]):
                 print(f"Maps:\n{maps}")
         else:
             print(gma)
- 
+
 class SteamDepot:
     def __init__(self,
                  depot_name : str,
@@ -563,10 +652,10 @@ class SteamDepot:
     def __str__(self):
         return f"Depot: {self.depot_name}  ID: {self.game_id}  Name: {self.game_name}  Path: {self.path}  Files: {len(self.files)}"
 
-    def set_files(self, files : list[str] | set[str]):
-        self.files = set(files)
+    def set_files(self, files : FileList_T):
+        self.files = files
 
-    def get_files(self) -> set[str]:
+    def get_files(self) -> FileList_T:
         return self.files
 
 def get_mounted_depots(steampath : pathlib.PurePath):
@@ -596,33 +685,128 @@ def get_mounted_depots(steampath : pathlib.PurePath):
     return depots
 
 def gather_files(path : pathlib.PurePath):
-    filelist = set()
+    filelist = {}
 
     for dirname in UNPACKED_FILE_DIRS:
         for root, dirs, files in pathlib.Path(path, dirname).walk():
             for file in files:
                 # get the relative path and join its directory parts back together
                 # in the same way as other gmod paths are
-                filelist.add('/'.join(pathlib.PurePath(root, file).relative_to(path).parts))
+                name = '/'.join(pathlib.PurePath(root, file).relative_to(path).parts)
+                hashobj = hashlib.sha1(usedforsecurity=False)
+                size = 0
+                with pathlib.Path(root, file).open('rb') as infile:
+                    while True:
+                        data = infile.read(READ_SIZE)
+                        if len(data) == 0:
+                            break
+                        size += len(data)
+                        hashobj.update(data)
+                filelist[name] = FileHash(size, hashobj.digest())
+
+    return filelist
+
+@dataclass
+class HashFileState():
+    hashes : FileList_T
+    hashobj : SHA1_T | None
+    curname : str | None
+    size : int
+
+    def __init__(self):
+        self.hashes = {}
+        self.hashobj = None
+        self.curname = None
+        self.size = 0
+
+def hash_new_file_cb(priv, name):
+    priv.hashobj = hashlib.sha1(usedforsecurity=False)
+    priv.curname = name
+    priv.size = 0
+
+    return True
+
+def hash_data_cb(priv, data):
+    priv.size += len(data)
+    priv.hashobj.update(data)
+
+    return True
+
+def hash_end_file_cb(priv):
+    priv.hashes[priv.curname] = FileHash(priv.size, priv.hashobj.digest())
+
+    return True
+
+def get_cache_path(steampath : pathlib.PurePath, depot : SteamDepot):
+    path = depot.path.relative_to(pathlib.Path(steampath, STEAM_APP_PATH))
+    outname = str('_'.join(path.parts))
+    if outname.endswith(VPKFile.DIRECTORY_SUFFIX):
+        outname = outname[:-len(VPKFile.DIRECTORY_SUFFIX)]
+    outname += ".vpkhashcache"
+
+    return path, outname
+
+def write_cache(steampath : pathlib.PurePath, depot : SteamDepot):
+    path, outname = get_cache_path(steampath, depot)
+
+    print(f"Writing cache for {path} to {outname}.")
+    with open(outname, 'w') as cachefile:
+        for file in depot.files.keys():
+            hexstr = ""
+            for b in depot.files[file].digest:
+                hexstr += f"{b:02X}"
+            cachefile.write(f"{depot.files[file].size} {hexstr} {file}\n")
+
+def read_cache(steampath : pathlib.PurePath, depot : SteamDepot):
+    filelist : FileList_T = {}
+
+    path, outname = get_cache_path(steampath, depot)
+
+    try:
+        with open(outname, 'r') as cachefile:
+            print(f"Reading cache for {path} from {outname}.")
+            for line in cachefile.readlines():
+                size, digest, name = line.split(maxsplit=2)
+                digestarray = array.array('B', itertools.repeat(0, len(digest) // 2))
+                for i in range(len(digestarray)):
+                    digestarray[i] = int(digest[i*2:(i*2)+1], base=16)
+                # remove the newline
+                filelist[name[:-1]] = FileHash(size, digestarray.tobytes())
+    except FileNotFoundError:
+        return None
 
     return filelist
 
 def list_depot(steampath : pathlib.PurePath, depot : SteamDepot):
-    depot.set_files(gather_files(depot.path))
+    # TODO: read data from caches
+
+    naked_files = read_cache(steampath, depot)
+    if naked_files is None:
+        naked_files = gather_files(depot.path)
+        depot.set_files(naked_files)
+        write_cache(steampath, depot)
+    else:
+        depot.set_files(naked_files)
 
     newdepots = [depot]
 
-    for item in pathlib.Path(depot.path).glob("*.vpk", case_sensitive=False):
-        vpk = VPKFile(item)
-        files = vpk.get_files_list()
-        if files is None:
-            continue
+    for item in pathlib.Path(depot.path).glob(f"*{VPKFile.DIRECTORY_SUFFIX}", case_sensitive=False):
         newdepot = SteamDepot(depot.depot_name,
                               depot.game_id,
                               depot.game_name,
                               True,
                               pathlib.PurePath(depot.path, item))
-        newdepot.set_files(files)
+
+        depot_files = read_cache(steampath, newdepot)
+        if depot_files is None:
+            with VPKFile(item) as vpk:
+                priv = HashFileState()
+                vpk.read_all_data(hash_new_file_cb, hash_data_cb, hash_end_file_cb, priv)
+                newdepot.set_files(priv.hashes)
+            write_cache(steampath, newdepot)
+        else:
+            newdepot.set_files(depot_files)
+
         newdepots.append(newdepot)
 
     return newdepots
@@ -651,28 +835,34 @@ def collisions_scan(path, do_only=[]):
             compressed = True
 
         with GMAFile(path[1], compressed) as gma:
-            # no dumping, so just close it right away
-            gma.close()
-
             newdepot = SteamDepot(f"addon_{gma.workshop_id}",
                                   gma.workshop_id,
                                   gma.name,
                                   False,
                                   gma.path)
-            newdepot.set_files(gma.get_file_set())
+
+            priv = HashFileState()
+            gma.read_all_data(hash_new_file_cb, hash_data_cb, hash_end_file_cb, priv)
+            newdepot.set_files(priv.hashes)
             depots.append(newdepot)
 
     print("Finding collisions...")
+    depotsets = []
+    for depot in depots:
+        depotsets.append(set(depot.files.keys()))
+
     collisions = {}
-    for num, depot1 in enumerate(depots):
-        for depot2 in depots[num+1:]:
-            intersection = depot1.files.intersection(depot2.files)
+    for num1, depot1 in enumerate(depotsets):
+        for num2, depot2 in enumerate(depotsets[num1+1:]):
+            intersection = depot1.intersection(depot2)
             for item in intersection:
-                if item in collisions:
-                    collisions[item].add(depot1)
-                    collisions[item].add(depot2)
-                else:
-                    collisions[item] = {depot1, depot2}
+                if depots[num1].files[item] != depots[num1+1+num2].files[item]:
+                    # if size and hash differs, add it
+                    if item in collisions:
+                        collisions[item].add(depots[num1])
+                        collisions[item].add(depots[num1+1+num2])
+                    else:
+                        collisions[item] = {depots[num1], depots[num1+1+num2]}
 
     for collision in collisions.keys():
         addon = False
