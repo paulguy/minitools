@@ -749,18 +749,19 @@ def get_cache_path(steampath : pathlib.PurePath, depot : SteamDepot):
 
     return path, outname
 
-def write_cache(steampath : pathlib.PurePath, depot : SteamDepot):
+def write_cache(steampath : pathlib.PurePath, depot : SteamDepot, time : float):
     path, outname = get_cache_path(steampath, depot)
 
     #print(f"Writing cache for {path} to {outname}.")
     with open(outname, 'w') as cachefile:
+        cachefile.write(f"{time}\n")
         for file in depot.files.keys():
             hexstr = ""
             for b in depot.files[file].digest:
                 hexstr += f"{b:02X}"
             cachefile.write(f"{depot.files[file].size} {hexstr} {file}\n")
 
-def read_cache(steampath : pathlib.PurePath, depot : SteamDepot):
+def read_cache(steampath : pathlib.PurePath, depot : SteamDepot, time : float):
     filelist : FileList_T = {}
 
     path, outname = get_cache_path(steampath, depot)
@@ -768,6 +769,10 @@ def read_cache(steampath : pathlib.PurePath, depot : SteamDepot):
     try:
         with open(outname, 'r') as cachefile:
             #print(f"Reading cache for {path} from {outname}.")
+            cachetime = float(cachefile.readline())
+            if cachetime < time:
+                # if cache is older than the file time, the cache is invalid
+                return None
             for line in cachefile.readlines():
                 size, digest, name = line.split(maxsplit=2)
                 digestarray = array.array('B', itertools.repeat(0, len(digest) // 2))
@@ -801,11 +806,12 @@ def get_depots(steampath : pathlib.PurePath):
     return newdepots
 
 def hash_naked_files(steampath : pathlib.PurePath, depot : SteamDepot):
-    naked_files = read_cache(steampath, depot)
+    stat = os.stat(depot.path)
+    naked_files = read_cache(steampath, depot, stat.st_ctime)
     if naked_files is None:
         naked_files = gather_files(depot.path)
         depot.set_files(naked_files)
-        write_cache(steampath, depot)
+        write_cache(steampath, depot, stat.st_ctime)
         return False
     else:
         depot.set_files(naked_files)
@@ -820,13 +826,13 @@ def hash_gma_files(depot : SteamDepot):
     return False
 
 def hash_vpk_files(steampath : pathlib.PurePath, depot : SteamDepot):
-    depot_files = read_cache(steampath, depot)
+    depot_files = read_cache(steampath, depot, depot.source.filetime)
     if depot_files is None:
         priv = HashFileState()
         depot.source.read_all_data(hash_new_file_cb, hash_data_cb, hash_end_file_cb, priv)
         depot.source.close()
         depot.set_files(priv.hashes)
-        write_cache(steampath, depot)
+        write_cache(steampath, depot, depot.source.filetime)
         return False
     else:
         depot.set_files(depot_files)
