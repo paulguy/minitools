@@ -13,6 +13,7 @@ import array
 import itertools
 import lzma
 import hashlib
+import threading
 
 # relative to home
 DEFAULT_STEAM_PATH = pathlib.PurePath(".local", "share", "Steam")
@@ -484,6 +485,8 @@ class VPKFile(ValveFile):
                     data = infile.read(to_read)
                     data_cb(priv, data)
                     remaining -= len(data)
+                if infile is not self:
+                    infile.close()
             end_file_cb(priv)
 
 def parse_acf_file(path : pathlib.PurePath):
@@ -636,14 +639,13 @@ class SteamDepot:
                  depot_name : str,
                  game_id : int,
                  game_name : str,
-                 mounted : bool,
-                 path : pathlib.PurePath):
+                 path : pathlib.PurePath,
+                 source : None | VPKFile | GMAFile):
         self.depot_name = depot_name
         self.game_id = game_id
         self.game_name = game_name
-        self.mounted = mounted
-        # not 100% sure on this one
         self.path = path
+        self.source = source
         self.files = []
 
     def __hash__(self):
@@ -667,8 +669,8 @@ def get_mounted_depots(steampath : pathlib.PurePath):
     depots = [SteamDepot("garrysmod",
                          GARRYSMOD_GAMEID,
                          "Garry's Mod",
-                         True,
-                         pathlib.PurePath(steampath, GARRYSMOD_PATH, "garrysmod"))]
+                         pathlib.PurePath(steampath, GARRYSMOD_PATH, "garrysmod"),
+                         None)]
 
     depotdict = depotdata["gamedepotsystem"]
     for depot in depotdict.keys():
@@ -679,8 +681,8 @@ def get_mounted_depots(steampath : pathlib.PurePath):
             depots.append(SteamDepot(depot,
                                      depotinfo[0],
                                      depotinfo[1],
-                                     True,
-                                     pathlib.PurePath(steampath, STEAM_APP_PATH, depotdata["AppState"]["installdir"], depot)))
+                                     pathlib.PurePath(steampath, STEAM_APP_PATH, depotdata["AppState"]["installdir"], depot),
+                                     None))
 
     return depots
 
@@ -749,7 +751,7 @@ def get_cache_path(steampath : pathlib.PurePath, depot : SteamDepot):
 def write_cache(steampath : pathlib.PurePath, depot : SteamDepot):
     path, outname = get_cache_path(steampath, depot)
 
-    print(f"Writing cache for {path} to {outname}.")
+    #print(f"Writing cache for {path} to {outname}.")
     with open(outname, 'w') as cachefile:
         for file in depot.files.keys():
             hexstr = ""
@@ -764,7 +766,7 @@ def read_cache(steampath : pathlib.PurePath, depot : SteamDepot):
 
     try:
         with open(outname, 'r') as cachefile:
-            print(f"Reading cache for {path} from {outname}.")
+            #print(f"Reading cache for {path} from {outname}.")
             for line in cachefile.readlines():
                 size, digest, name = line.split(maxsplit=2)
                 digestarray = array.array('B', itertools.repeat(0, len(digest) // 2))
@@ -778,43 +780,18 @@ def read_cache(steampath : pathlib.PurePath, depot : SteamDepot):
     return filelist
 
 def list_depot(steampath : pathlib.PurePath, depot : SteamDepot):
-    # TODO: read data from caches
-
-    naked_files = read_cache(steampath, depot)
-    if naked_files is None:
-        naked_files = gather_files(depot.path)
-        depot.set_files(naked_files)
-        write_cache(steampath, depot)
-    else:
-        depot.set_files(naked_files)
-
     newdepots = [depot]
 
     for item in pathlib.Path(depot.path).glob(f"*{VPKFile.DIRECTORY_SUFFIX}", case_sensitive=False):
-        newdepot = SteamDepot(depot.depot_name,
-                              depot.game_id,
-                              depot.game_name,
-                              True,
-                              pathlib.PurePath(depot.path, item))
-
-        depot_files = read_cache(steampath, newdepot)
-        if depot_files is None:
-            with VPKFile(item) as vpk:
-                priv = HashFileState()
-                vpk.read_all_data(hash_new_file_cb, hash_data_cb, hash_end_file_cb, priv)
-                newdepot.set_files(priv.hashes)
-            write_cache(steampath, newdepot)
-        else:
-            newdepot.set_files(depot_files)
-
-        newdepots.append(newdepot)
+        newdepots.append(SteamDepot(depot.depot_name,
+                                    depot.game_id,
+                                    depot.game_name,
+                                    item,
+                                    VPKFile(pathlib.PurePath(depot.path, item))))
 
     return newdepots
 
 def get_depots(steampath : pathlib.PurePath):
-    # main garrysmod VPKs
-    #filelists.update(_read_vpks("Garry's Mod", pathlib.Path(path, GARRYSMOD_PATH, "garrysmod")))
-
     depots = get_mounted_depots(steampath)
     newdepots = []
     for depot in depots:
@@ -822,29 +799,85 @@ def get_depots(steampath : pathlib.PurePath):
 
     return newdepots
 
-def collisions_scan(path, do_only=[]):
+def hash_naked_files(steampath : pathlib.PurePath, depot : SteamDepot):
+    naked_files = read_cache(steampath, depot)
+    if naked_files is None:
+        naked_files = gather_files(depot.path)
+        depot.set_files(naked_files)
+        write_cache(steampath, depot)
+        return False
+    else:
+        depot.set_files(naked_files)
+    return True
+
+def hash_gma_files(depot : SteamDepot):
+    priv = HashFileState()
+    depot.source.read_all_data(hash_new_file_cb, hash_data_cb, hash_end_file_cb, priv)
+    depot.set_files(priv.hashes)
+    depot.source.close()
+    # never cached
+    return False
+
+def hash_vpk_files(steampath : pathlib.PurePath, depot : SteamDepot):
+    depot_files = read_cache(steampath, depot)
+    if depot_files is None:
+        priv = HashFileState()
+        depot.source.read_all_data(hash_new_file_cb, hash_data_cb, hash_end_file_cb, priv)
+        depot.source.close()
+        depot.set_files(priv.hashes)
+        write_cache(steampath, depot)
+        return False
+    else:
+        depot.set_files(depot_files)
+        depot.source.close()
+    return True
+
+def hash_depot(sem : threading.Semaphore, steampath : pathlib.PurePath, depot : SteamDepot):
+    cached = False
+    if depot.source is None:
+        cached = hash_naked_files(steampath, depot)
+    elif isinstance(depot.source, VPKFile):
+        cached = hash_vpk_files(steampath, depot)
+    elif isinstance(depot.source, GMAFile):
+        cached = hash_gma_files(depot)
+    else:
+        raise RuntimeError("Couldn't determine depot source (this is a bug!)")
+    print(f"Hashed {depot.path}", end='')
+    if cached:
+        print(" (cached)")
+    else:
+        print()
+    sem.release()
+
+def collisions_scan(steampath : pathlib.PurePath, do_only=[], num_threads=1):
     print("Gathering mounted files...")
-    depots = get_depots(path)
+    depots = get_depots(steampath)
 
     print("Gathering addon files...")
-    gmas = _get_gma_infos(path, do_only)
+    gmas = _get_gma_infos(steampath, do_only)
 
     for path in gmas:
         compressed = False
         if path[1].name.endswith("_legacy.bin"):
             compressed = True
 
-        with GMAFile(path[1], compressed) as gma:
-            newdepot = SteamDepot(f"addon_{gma.workshop_id}",
-                                  gma.workshop_id,
-                                  gma.name,
-                                  False,
-                                  gma.path)
+        gma = GMAFile(path[1], compressed)
+        depots.append(SteamDepot(f"addon_{gma.workshop_id}",
+                                 gma.workshop_id,
+                                 gma.name,
+                                 path[1],
+                                 gma))
 
-            priv = HashFileState()
-            gma.read_all_data(hash_new_file_cb, hash_data_cb, hash_end_file_cb, priv)
-            newdepot.set_files(priv.hashes)
-            depots.append(newdepot)
+    print("Hashing files...")
+    sem = threading.Semaphore(num_threads)
+    threads = []
+    for depot in depots:
+        sem.acquire()
+        threads.append(threading.Thread(target=hash_depot, args=(sem, steampath, depot)))
+        threads[-1].start()
+    # wait for the rest to finish
+    for i in range(num_threads):
+        sem.acquire()
 
     print("Finding collisions...")
     depotsets = []
@@ -867,7 +900,7 @@ def collisions_scan(path, do_only=[]):
     for collision in collisions.keys():
         addon = False
         for depot in collisions[collision]:
-            if not depot.mounted:
+            if isinstance(depot.source, GMAFile):
                 addon = True
         if addon:
             print(f"File: {collision}")
@@ -902,6 +935,7 @@ if __name__ == '__main__':
     do_only = []
     sort_list = []
     path = pathlib.Path.home().joinpath(DEFAULT_STEAM_PATH)
+    threads = 1
 
     # ultra simple args parsing
     while len(argv) > 0:
@@ -923,6 +957,11 @@ if __name__ == '__main__':
             elif len(argv) > 1 and arg == 'steampath':
                 path = pathlib.PurePath(argv[1])
                 argv = argv[1:]
+            elif arg.startswith('threads='):
+                threads = int(arg[8:])
+            elif len(argv) > 1 and arg == 'threads':
+                threads = int(argv[1])
+                argv = argv[1:]
             else:
                 do_usage = True
                 break
@@ -938,6 +977,6 @@ if __name__ == '__main__':
     if do_usage:
         usage(sys.argv[0])
     elif do_collisions:
-        collisions_scan(path, do_only)
+        collisions_scan(path, do_only, threads)
     else:
         get_gma_infos(path, do_list, do_dump, do_only, sort_list)
