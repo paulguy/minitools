@@ -196,6 +196,10 @@ class ValveFile:
         else:
             self.file = pathlib.Path(path).open('rb')
 
+        stat = self.stat()
+        self.size = stat.st_size
+        self.filetime = stat.st_ctime
+
         self.buffer = array.array('B', itertools.repeat(0, self.READ_BUFFER_SIZE))
         self.filled = 0
 
@@ -246,8 +250,6 @@ class GMAFile(ValveFile):
         self.maps = []
 
         self.workshop_id = int(path.parent.name)
-        stat = self.stat()
-        self.size = stat.st_size
 
         magic, version, steamid, timestamp = self.GMA_HDR.unpack(self.read(self.GMA_HDR.size))
         if magic != self.GMA_MAGIC:
@@ -257,7 +259,6 @@ class GMAFile(ValveFile):
         self.steamid = steamid
         self.timestamp = timestamp
 
-        self.filetime = stat.st_ctime
 
         if self.version > 1:
             # apparently just, a string that needs to be read past
@@ -849,6 +850,12 @@ def hash_depot(sem : threading.Semaphore, steampath : pathlib.PurePath, depot : 
         print()
     sem.release()
 
+def depot_sort_key(depot : SteamDepot):
+    if depot.source is None:
+        return 1<<31 # put bare directories further up
+
+    return depot.source.size
+
 def collisions_scan(steampath : pathlib.PurePath, do_only=[], num_threads=1):
     print("Gathering mounted files...")
     depots = get_depots(steampath)
@@ -868,7 +875,11 @@ def collisions_scan(steampath : pathlib.PurePath, do_only=[], num_threads=1):
                                  path[1],
                                  gma))
 
-    print("Hashing files...")
+    # get the larger files first to minimize time at the end potentially
+    # waiting on fewer large tasks
+    depots = sorted(depots, key=depot_sort_key, reverse=True)
+
+    print(f"Hashing files... ({num_threads} thread(s))")
     sem = threading.Semaphore(num_threads)
     threads = []
     for depot in depots:
@@ -921,7 +932,7 @@ def make_sort_list(sort_list_string):
 
 def usage(app):
     print(f"USAGE: {app} [--list | --sort[=]<criteria[,criteria,...]> | --dump | --steampath[=]<path to steam> | <workshop ID>]...\n"
-          f"       {app} [--steampath[=]<path to steam> | --collisions-scan]")
+          f"       {app} --collisions-scan [--steampath[=]<path to steam> | --threads[=]<number of threads>]...")
     print("\nSort criterias:\n")
     for sort in GMAFile.SORTS.keys():
         print(f"{sort} : {GMAFile.SORTS[sort][0]}")

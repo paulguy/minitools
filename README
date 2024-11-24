@@ -282,8 +282,19 @@ godot_object_scanner.py
    kept in case it ruins the file or does something unsavory.
 
 gmod_map_list.py
-  USAGE: ./gmod_map_list.py [--list | --dump | --steampath[=]<path to steam> | <workshop ID>]...
-         ./gmod_map_list.py [--steampath[=]<path to steam> | --collisions-scan]
+  USAGE: ./gmod_map_list.py [--list | --sort[=]<criteria[,criteria,...]> | --dump | --steampath[=]<path to steam> | <workshop ID>]...
+         ./gmod_map_list.py --collisions-scan [--steampath[=]<path to steam> | --threads[=]<number of threads>]...
+
+  Sort criterias:
+
+  id : ID
+  size : Size
+  updated : Last Updated Time
+  published : Published Time
+  name : Name
+  author : Author
+  files : File Count
+  maps : Map Count
 
   List all gma files and information provided by them from the steam workshop
   directory.  A list of workshop IDs can be given to get information on only
@@ -305,6 +316,12 @@ gmod_map_list.py
    game data.  This works on a lot of assumptions of how mounted content works
    so it might not be super accurate, but it might be a useful guideline to
    maybe narrow down some things.
+
+  --threads
+   Only for collisions scanning mode.  Number of threads to use for hashing,
+   default is 1.  4 improves things for me, 8 just a bit more, but it's
+   probably diminishing returns from there unless maybe you have a very fast
+   SSD, but I suspect most of the slowness is python itself.
 
 dn1gfx.py
   USAGE: ./dn1gfx.py <filename>
