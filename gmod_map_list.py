@@ -176,8 +176,19 @@ class ValveFile:
 
     def close(self):
         if self.file is not None:
+            self.lastpos = self.file.tell()
             self.file.close()
             self.file = None
+
+    def do_open(self):
+        if self.compressed:
+            self.file = lzma.LZMAFile(self.path)
+        else:
+            self.file = self.path.open('rb')
+
+    def reopen(self):
+        self.do_open()
+        self.file.seek(self.lastpos)
 
     def stat(self):
         return os.stat(self.file.fileno())
@@ -191,10 +202,10 @@ class ValveFile:
         return False
 
     def __init__(self, path : pathlib.PurePath, compressed : bool=False):
-        if compressed:
-            self.file = lzma.LZMAFile(path)
-        else:
-            self.file = pathlib.Path(path).open('rb')
+        self.path = pathlib.Path(path)
+        self.compressed = compressed
+
+        self.do_open()
 
         stat = self.stat()
         self.size = stat.st_size
@@ -202,6 +213,7 @@ class ValveFile:
 
         self.buffer = array.array('B', itertools.repeat(0, self.READ_BUFFER_SIZE))
         self.filled = 0
+        self.lastpos = 0
 
 @dataclass
 class GMAEntry:
@@ -259,7 +271,6 @@ class GMAFile(ValveFile):
         self.steamid = steamid
         self.timestamp = timestamp
 
-
         if self.version > 1:
             # apparently just, a string that needs to be read past
             _ = self.read_string()
@@ -308,6 +319,8 @@ class GMAFile(ValveFile):
         self.filenum = 0
         self.filepos = -1
 
+        self.close()
+
     def read_file_data(self, maxread=-1):
         if self.filepos < 0:
             if self.filenum == len(self.files):
@@ -328,6 +341,8 @@ class GMAFile(ValveFile):
         return ret
 
     def read_all_data(self, new_file_cb, data_cb, end_file_cb, priv):
+        self.reopen()
+
         # open an initial file
         data = self.read_file_data(READ_SIZE)
         if not new_file_cb(priv, data):
@@ -457,7 +472,11 @@ class VPKFile(ValveFile):
                     if preloadBytes > 0:
                         self.seek(preloadBytes, os.SEEK_CUR)
 
+        self.close()
+
     def read_all_data(self, new_file_cb, data_cb, end_file_cb, priv):
+        self.reopen()
+
         for name in self.files.keys():
             file = self.files[name]
             new_file_cb(priv, name)
