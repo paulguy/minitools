@@ -418,7 +418,7 @@ def text_to_block(text):
         gfx[lnum] = gfx[lnum][:len(gfx[lnum]) // 2]
     totallen -= 1
 
-    outtext = array('u', repeat(' ', totallen))
+    outtext = array('w', repeat(' ', totallen))
     pos = 0
     for lnum, line in enumerate(gfx):
         for num, val in enumerate(line):
