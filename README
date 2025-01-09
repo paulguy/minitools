@@ -217,12 +217,13 @@ export_palettes.py
 
 blocktext.py
   Outputs text in a dumb blocky font to the terminal.
-  USAGE: ./blocktext.py "<text>"
-  All text must be in 1 argument, so if it's multiple words or would otherwise
-  be split by the terminal, it should be quoted.  Also only supports the
-  printable 7 bit ASCII character codes.
 
-  If no arguments are given, read from stdin.
+  USAGE: ./blocktext.py [--help] [--sextants] [--octants] [--test] [text...]
+    --help - output this text
+    --sextants - Use 3 pixel tall font.  Less readable, more compatible.
+    --octants - Use 4 pixel tall font.  More readable, less compatible.
+    --test - Test mode.
+    text... - optional text provided on the command line, otherwise read from stdin.
 
 uncdk
   Deobfuscates CDK videos from some Blockbuster CD.  I imagine other things
