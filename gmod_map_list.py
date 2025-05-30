@@ -397,6 +397,22 @@ class GMAFile(ValveFile):
                f"Addon Version (unused?): {self.addon_ver}\n" \
                f"Files:\n{files}\nMaps:\n{maps}"
 
+    def get_dict(self):
+        return {'workshop_id': self.workshop_id,
+                'url': self.get_url(),
+                'size': self.size,
+                'updated_time': self.filetime,
+                'version': self.version,
+                'steamid': self.steamid,
+                'timestamp': self.timestamp,
+                'name': self.name,
+                'author': self.author,
+                'type': self.type,
+                'tags': self.tags,
+                'description': self.description,
+                'addon_ver': self.addon_ver,
+                'files': [{'name': file.name, 'size': file.size} for file in self.files]}
+
 @dataclass
 class VPKEntry():
     archive : int # if 0x7FFF, the archive is the directory and archive_offset is relative to end of the tree
@@ -621,7 +637,7 @@ def dump_end_file_cb(priv):
 
     return True
 
-def get_gma_infos(path, do_list=False, do_dump=False, do_only=[], sort_list=[]):
+def get_gma_infos(path, do_list=False, do_dump=False, do_json=False, do_only=[], sort_list=[]):
     # ugh big ugly do everything function
 
     gma_paths = _get_gma_infos(path, do_only)
@@ -645,14 +661,18 @@ def get_gma_infos(path, do_list=False, do_dump=False, do_only=[], sort_list=[]):
     for sort in sort_list:
         gmas = sorted(gmas, key=sort[1])
 
-    for gma in gmas:
-        if do_list:
-            print(f"{gma.workshop_id} {gma.name} {human_readable_size(gma.size)}")
-            maps = gma.mapnames()
-            if len(maps) > 0:
-                print(f"Maps:\n{maps}")
-        else:
-            print(gma)
+    if do_json:
+        gmadicts = [gma.get_dict() for gma in gmas]
+        print(json.dumps(gmadicts))
+    else:
+        for gma in gmas:
+            if do_list:
+                print(f"{gma.workshop_id} {gma.name} {human_readable_size(gma.size)}")
+                maps = gma.mapnames()
+                if len(maps) > 0:
+                    print(f"Maps:\n{maps}")
+            else:
+                print(gma)
 
 class SteamDepot:
     def __init__(self,
@@ -968,6 +988,7 @@ if __name__ == '__main__':
     do_collisions = False
     do_list = False
     do_dump = False
+    do_json = False
     do_only = []
     sort_list = []
     path = pathlib.Path.home().joinpath(DEFAULT_STEAM_PATH)
@@ -988,6 +1009,8 @@ if __name__ == '__main__':
                 do_dump = True
             elif arg == 'collisions-scan':
                 do_collisions = True
+            elif arg == 'json':
+                do_json = True
             elif arg.startswith('steampath='):
                 path = pathlib.PurePath(arg[10:])
             elif len(argv) > 1 and arg == 'steampath':
@@ -1015,4 +1038,4 @@ if __name__ == '__main__':
     elif do_collisions:
         collisions_scan(path, do_only, threads)
     else:
-        get_gma_infos(path, do_list, do_dump, do_only, sort_list)
+        get_gma_infos(path, do_list, do_dump, do_json, do_only, sort_list)
