@@ -77,6 +77,10 @@ type DepotFileList_T = dict[str, FileList_T]
 
 SHA1_T = type(hashlib.sha1())
 
+def log_print(string : str = '', end : str = '\n'):
+    sys.stderr.write(string)
+    sys.stderr.write(end)
+
 def human_readable_size(size : int):
     thousands = 0
     thousandths = 0
@@ -156,7 +160,6 @@ class ValveFile:
         try:
             retbuf = retbuf.decode('utf-8')
         except UnicodeDecodeError as e:
-            print(retbuf)
             raise e
 
         return retbuf
@@ -603,7 +606,7 @@ def _get_gma_infos(path, do_only=[]):
     for path in paths:
         if isinstance(path, str):
             # print errors
-            print(path)
+            log_print(path)
         else:
             workshop_id = int(path.parent.name)
             if len(do_only) == 0 or workshop_id in do_only:
@@ -888,11 +891,11 @@ def hash_depot(sem : threading.Semaphore, steampath : pathlib.PurePath, depot : 
         cached = hash_gma_files(depot)
     else:
         raise RuntimeError("Couldn't determine depot source (this is a bug!)")
-    print(f"Hashed {depot.path}", end='')
+    log_print(f"Hashed {depot.path}", end='')
     if cached:
-        print(" (cached)")
+        log_print(" (cached)")
     else:
-        print()
+        log_print()
     sem.release()
 
 def depot_sort_key(depot : SteamDepot):
@@ -902,10 +905,10 @@ def depot_sort_key(depot : SteamDepot):
     return depot.source.size
 
 def collisions_scan(steampath : pathlib.PurePath, do_only=[], num_threads=1):
-    print("Gathering mounted files...")
+    log_print("Gathering mounted files...")
     depots = get_depots(steampath)
 
-    print("Gathering addon files...")
+    log_print("Gathering addon files...")
     gmas = _get_gma_infos(steampath, do_only)
 
     for path in gmas:
@@ -924,7 +927,7 @@ def collisions_scan(steampath : pathlib.PurePath, do_only=[], num_threads=1):
     # waiting on fewer large tasks
     depots = sorted(depots, key=depot_sort_key, reverse=True)
 
-    print(f"Hashing files... ({num_threads} thread(s))")
+    log_print(f"Hashing files... ({num_threads} thread(s))")
     sem = threading.Semaphore(num_threads)
     threads = []
     for depot in depots:
@@ -935,7 +938,7 @@ def collisions_scan(steampath : pathlib.PurePath, do_only=[], num_threads=1):
     for i in range(num_threads):
         sem.acquire()
 
-    print("Finding collisions...")
+    log_print("Finding collisions...")
     depotsets = []
     for depot in depots:
         depotsets.append(set(depot.files.keys()))
