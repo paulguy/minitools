@@ -339,3 +339,11 @@ dn1gfx.py
   the PNG present will return back a DN1.  The PNG should still be indexed
   with the same palette in the same order (most graphics packages which are
   good for handling indexed graphics should respect this).
+
+mpv-dim-screen.lua
+  USAGE: however you prefer to have mpv to load a script
+   Make sure script-opts screen_brightness_output and screen_brightness_value
+   are set to the output name "DP-1", etc. and the brightness in nits.  This
+   uses kscreen-doctor under a KDE plasma session to set the screen to a set
+   brightness in nits when starting mpv and resets it to what it was on
+   shutdown.
