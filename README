@@ -347,3 +347,9 @@ mpv-dim-screen.lua
    uses kscreen-doctor under a KDE plasma session to set the screen to a set
    brightness in nits when starting mpv and resets it to what it was on
    shutdown.
+
+font-renamer.py
+  USAGE: ./font-renamer.py <filename> [new name] [new subfamily]
+   Rename a TTF's internal name to new name.  If you need to change the
+   subfamily (Regular, Bold, Itaic...), that can be added too.  If no argument
+   is given, it will just display all the name fields in the file.
