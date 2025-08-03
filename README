@@ -353,3 +353,7 @@ font-renamer.py
    Rename a TTF's internal name to new name.  If you need to change the
    subfamily (Regular, Bold, Itaic...), that can be added too.  If no argument
    is given, it will just display all the name fields in the file.
+
+   This isn't very useful, but it was helpful to override what Wine's idea of
+   the default system font "Tahoma" is because there is no other way to
+   reconfigure wine for this.
