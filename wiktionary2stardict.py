@@ -389,7 +389,7 @@ IDX_ENTRY = struct.Struct(">BII")
 def write_idx(dict_offsets : list[tuple[str, int]]) -> int:
     size = 0
     with open("stardict.idx", 'wb') as outfile:
-        for entry in dict_offsets[:-1]:
+        for entry in dict_offsets:
             outfile.write(entry[0].encode('utf-8'))
             outfile.write(IDX_ENTRY.pack(0, entry[1], entry[2]))
         size = outfile.tell()
