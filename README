@@ -357,3 +357,10 @@ font-renamer.py
    This isn't very useful, but it was helpful to override what Wine's idea of
    the default system font "Tahoma" is because there is no other way to
    reconfigure wine for this.
+
+wiktionary2stardict.py
+  USAGE: ./wiktionary2stardict.py <filename>
+   Simple script to convert a wiktextract jsonl file to a stardict dictionary.
+   Very rough and quite slow.  Might not work on any arbitrary generated
+   wiktextract output and might miss entries or not include data/fields one
+   might necessarily desire.
