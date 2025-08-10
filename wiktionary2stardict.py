@@ -372,7 +372,7 @@ def write_dict(words : dict[str, list[Definition]]) -> (list[tuple[str, int]],
                                                         dict[str, int]):
     dict_offsets : list[tuple[str, int, int]] = []
     dict_indexes : dict[str, int] = {}
-    wordlist = list(words.keys())
+    wordlist = sorted(list(words.keys()))
 
     with open("stardict.dict", 'wb') as outfile:
         for num, word in enumerate(wordlist):
@@ -400,13 +400,19 @@ SYN_ENTRY = struct.Struct(">BI")
 def write_syn(mappings : dict[str, list[str]],
               dict_indexes : dict[str, int]) -> int:
     count = 0
-    with open("stardict.syn", 'wb') as outfile:
-        for mapping in mappings.keys():
-            count += len(mappings[mapping])
+    syns : list[tuple[str, int]] = []
+    for mapping in mappings.keys():
+        count += len(mappings[mapping])
 
-            for syn in mappings[mapping]:
-                outfile.write(syn.encode('utf-8'))
-                outfile.write(SYN_ENTRY.pack(0, dict_indexes[mapping]))
+        for syn in mappings[mapping]:
+            syns.append((syn, dict_indexes[mapping]))
+
+    syns = sorted(syns, key=lambda x: x[0])
+
+    with open("stardict.syn", 'wb') as outfile:
+        for syn in syns:
+            outfile.write(syn[0].encode('utf-8'))
+            outfile.write(SYN_ENTRY.pack(0, syn[1]))
 
     return count
 
