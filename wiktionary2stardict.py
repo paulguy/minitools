@@ -180,7 +180,7 @@ class Definition:
             return None
         return match.group(1)
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.examples is None:
             return self.definition
         ret = f"{self.definition}\n"
@@ -188,7 +188,7 @@ class Definition:
             ret += '\n'.join(str(x) for x in self.examples)
         return ret
 
-    def htmlize(self):
+    def htmlize(self) -> str:
         ret = f"<li><p>{self.definition}</p>"
         if self.examples is not None:
             ret += "<ul>"
@@ -203,13 +203,13 @@ class Word:
     head_templates : list[str]
     definitions : list[Definition]
 
-    def __str__(self):
+    def __str__(self) -> str:
         ret = f"{WORDTYPE_TO_NAME[self.wordtype]}\n"
         ret += '\n'.join(str(x) for x in self.head_templates)
         ret += '\n'.join(str(x) for x in self.definitions)
         return ret
 
-    def htmlize(self):
+    def htmlize(self) -> str:
         ret = f"<p><b>{WORDTYPE_TO_NAME[self.wordtype]}</b></p>"
         ret += ''.join(f"<p>{x}</p>" for x in self.head_templates)
         ret += "<ol>"
@@ -252,7 +252,7 @@ def add_mapping(mappings : dict[str, set[str]],
         del mappings[alternate]
     mappings[original].update((alternate,))
 
-def add_record(words : dict[str, list[Definition]],
+def add_record(words : dict[str, list[Word]],
                mappings : dict[str, set[str]],
                record : dict):
     wordtype = STR_TO_WORDTYPE[record['pos']]
@@ -307,7 +307,7 @@ def add_record(words : dict[str, list[Definition]],
                 definitions.append(definition)
             head_templates : list[str] = []
             if 'head_templates' not in record:
-                head_templates.append([wordname])
+                head_templates.append(wordname)
             else:
                 for ht in record['head_templates']:
                     head_templates.append(ht['expansion'])
@@ -316,10 +316,10 @@ def add_record(words : dict[str, list[Definition]],
                 words[wordname] = []
             words[wordname].append(word)
 
-def parse_file(path : pathlib.Path, num=-1) -> (dict[str, list[Definition]],
-                                                dict[str, list[str]]):
-    words : dict[str, list[Definition]] = {}
-    mappings : dict[str, list[str]] = {}
+def parse_file(path : pathlib.Path, num=-1) -> tuple[dict[str, list[Word]],
+                                                     dict[str, set[str]]]:
+    words : dict[str, list[Word]] = {}
+    mappings : dict[str, set[str]] = {}
 
     with path.open('r') as infile:
         for line in infile:
@@ -334,8 +334,8 @@ def parse_file(path : pathlib.Path, num=-1) -> (dict[str, list[Definition]],
 
     return words, mappings
 
-def clean_mappings(words : dict[str, list[Definition]],
-                   mappings : dict[str, list[str]]):
+def clean_mappings(words : dict[str, list[Word]],
+                   mappings : dict[str, set[str]]):
     mapkeys = list(mappings.keys())
     wordset = set(words.keys())
     orig_len = len(mapkeys)
@@ -368,8 +368,8 @@ def clean_mappings(words : dict[str, list[Definition]],
             del mappings[mapping]
     print(f"Reduced from {orig_len} to {len(mappings)}")
 
-def write_dict(words : dict[str, list[Definition]]) -> (list[tuple[str, int]],
-                                                        dict[str, int]):
+def write_dict(words : dict[str, list[Word]]) -> tuple[list[tuple[str, int, int]],
+                                                       dict[str, int]]:
     dict_offsets : list[tuple[str, int, int]] = []
     dict_indexes : dict[str, int] = {}
     wordlist = sorted(list(words.keys()))
@@ -386,7 +386,7 @@ def write_dict(words : dict[str, list[Definition]]) -> (list[tuple[str, int]],
     return dict_offsets, dict_indexes
 
 IDX_ENTRY = struct.Struct(">BII")
-def write_idx(dict_offsets : list[tuple[str, int]]) -> int:
+def write_idx(dict_offsets : list[tuple[str, int, int]]) -> int:
     size = 0
     with open("stardict.idx", 'wb') as outfile:
         for entry in dict_offsets:
@@ -397,15 +397,15 @@ def write_idx(dict_offsets : list[tuple[str, int]]) -> int:
     return size
 
 SYN_ENTRY = struct.Struct(">BI")
-def write_syn(mappings : dict[str, list[str]],
+def write_syn(mappings : dict[str, set[str]],
               dict_indexes : dict[str, int]) -> int:
     count = 0
     syns : list[tuple[str, int]] = []
     for mapping in mappings.keys():
         count += len(mappings[mapping])
 
-        for syn in mappings[mapping]:
-            syns.append((syn, dict_indexes[mapping]))
+        for mapping_syn in mappings[mapping]:
+            syns.append((mapping_syn, dict_indexes[mapping]))
 
     syns = sorted(syns, key=lambda x: x[0])
 
