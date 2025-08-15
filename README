@@ -364,3 +364,7 @@ wiktionary2stardict.py
    Very rough and quite slow.  Might not work on any arbitrary generated
    wiktextract output and might miss entries or not include data/fields one
    might necessarily desire.
+
+vmftool.py
+  USAGE: ./vmftool.py
+   For now, Experiments with Valve Hammer VMF files.  Doesn't do much.
