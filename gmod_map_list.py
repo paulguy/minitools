@@ -720,7 +720,11 @@ def get_mounted_depots(steampath : pathlib.PurePath):
         if int(depotdict[depot]) != 0:
             depotinfo = STEAM_DEPOTS[depot]
             acfpath = pathlib.Path(steampath, "steamapps", f"appmanifest_{depotinfo[0]}.acf")
-            depotdata = parse_acf_file(acfpath)
+            try:
+                depotdata = parse_acf_file(acfpath)
+            except FileNotFoundError:
+                log_print(f"WARNING: Could not load app manifest for {depotinfo[0]} ({depotinfo[1]})!")
+                continue
             depots.append(SteamDepot(depot,
                                      depotinfo[0],
                                      depotinfo[1],
