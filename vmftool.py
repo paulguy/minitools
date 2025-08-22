@@ -10,8 +10,9 @@ from collections import namedtuple
 import pprint
 import copy
 import itertools
-from math import pi, tau, sin, cos, tan, hypot
+from math import pi, tau, sin, cos, tan, hypot, atan2
 
+F_PRECISION : int = 3
 DEFAULT_MATERIAL = "BLACK_OUTLINE"
 
 DEFAULT_VERSIONINFO : dict[str, str | list] = {
@@ -23,7 +24,6 @@ DEFAULT_VERSIONINFO : dict[str, str | list] = {
 }
 
 DEFAULT_WORLD : dict[str, str | list] = {
-	"id": "1",
 	"mapversion": "1",
 	"classname": "worldspawn",
 	"detailmaterial": "detail/detailsprites",
@@ -215,17 +215,34 @@ class SourceFile:
     def dump(data : dict[str, str | list]) -> str:
         return SourceFile.dumpclass(data)
 
-Point2 = namedtuple('Point2', ['x', 'y'])
-Point3 = namedtuple('Point3', ['x', 'y', 'z'])
-UVPoint = namedtuple('UVPoint', ['u_x', 'u_y', 'u_z', 'u_translate', 'u_scale',
-                                 'v_x', 'v_y', 'v_z', 'v_translate', 'v_scale'])
+Point2 = namedtuple('Point2', ('x', 'y'))
+Point3 = namedtuple('Point3', ('x', 'y', 'z'))
+UVPoint = namedtuple('UVPoint', ('u_x', 'u_y', 'u_z', 'u_translate', 'u_scale',
+                                 'v_x', 'v_y', 'v_z', 'v_translate', 'v_scale'))
+class IDs:
+    class_id : int
+    side_id : int
+
+    def __init__(self):
+        self.class_id = 1
+        self.side_id = 1
+
+    def get_and_inc_class_id(self):
+        class_id = self.class_id
+        self.class_id += 1
+        return class_id
+
+    def get_and_inc_side_id(self):
+        class_id = self.class_id
+        self.class_id += 1
+        return class_id
 
 def translate(point : Point3,
               pos : Point3) -> Point3:
     return Point3(point.x + pos.x, point.y + pos.y, point.z + pos.z)
 
 def rotate(point : Point3,
-            angles : Point3) -> Point3:
+            angle : Point3) -> Point3:
     #  1  0          0
     #  0  cos(a_x)  -sin(a_x)
     #  0  sin(a_x)   cos(a_x)
@@ -246,15 +263,15 @@ def rotate(point : Point3,
     #  (sin(a_x))(sin(a_y))(cos(a_z))+(cos(a_x))(sin(a_z))  -(sin(a_x))(sin(a_y))(sin(a_z))+(cos(a_x))(cos(a_z))  -(sin(a_x))(cos(a_y))
     # -(cos(a_x))(sin(a_y))(cos(a_z))+(sin(a_x))(sin(a_z))   (cos(a_x))(sin(a_y))(sin(a_z))+(sin(a_x))(cos(a_z))   (cos(a_x))(cos(a_y))
     # TODO this is broken
-    return Point3( (point.x * cos(angles.x) * cos(angles.z))
-                  +(point.y * sin(angles.x) * sin(angles.y) * sin(angles.z)) + (point.y * cos(angles.x) * sin(angles.z))
-                  -(point.z * cos(angles.x) * sin(angles.y) * cos(angles.z)) + (point.z * sin(angles.x) * sin(angles.z)),
-                  -(point.x * cos(angles.y) * sin(angles.z)) \
-                  -(point.y * sin(angles.x) * sin(angles.y) * sin(angles.z)) + (point.y * cos(angles.x) * cos(angles.z))
-                  -(point.z * cos(angles.x) * sin(angles.y) * sin(angles.z)) + (point.z * sin(angles.x) * cos(angles.z)),
-                   (point.x * sin(angles.y))
-                  -(point.y * sin(angles.x) * cos(angles.y))
-                  +(point.z * cos(angles.x) * cos(angles.y)))
+    point = Point3((point.x *  cos(angle.z)) + (point.y *  sin(angle.z)),
+                   (point.x * -sin(angle.z)) + (point.y *  cos(angle.z)),
+                    point.z)
+    point = Point3((point.x *  cos(angle.y)) + (point.z * -sin(angle.y)),
+                    point.y,
+                   (point.x *  sin(angle.y)) + (point.z *  cos(angle.y)))
+    return  Point3( point.x,
+                   (point.y *  cos(angle.x)) + (point.z *  sin(angle.x)),
+                   (point.y * -sin(angle.x)) + (point.z *  cos(angle.x)))
 
 def gen_polygon(sides : int, 
                 radius : float) -> list[Point2]:
@@ -274,7 +291,8 @@ class Shape:
     thickness : float
     top_angle : float
     bottom_angle : float
-    children : list["Shape"]
+    child_shapes : list['Shape']
+    child_entities : list['Entity']
 
     TOP_INDEX = 0
     BOTTOM_INDEX = 1
@@ -310,10 +328,10 @@ class Shape:
         if materials is None:
             materials = list(itertools.repeat(DEFAULT_MATERIAL, len(points) + 2))
         self.materials = materials
-        self.children = []
+        self.child_shapes = []
 
-    def add_child(self, child : "Shape"):
-        self.children.append(child)
+    def add_child_shape(self, child : "Shape"):
+        self.child_shapes.append(child)
 
     def set_one_material(self, idx : int, material : str):
         self.materials[idx] = material
@@ -342,73 +360,105 @@ class Shape:
                        material : str) -> dict[str, str | list]:
             sideclass : dict[str, str | list] = copy.copy(DEFAULT_SIDE)
             sideclass['id'] = str(side_id)
-            sideclass['plane'] = f"({p1.x:.3f} {p1.y:.3f} {p1.z:.3f}) " \
-                                 f"({p2.x:.3f} {p2.y:.3f} {p2.z:.3f}) " \
-                                 f"({p3.x:.3f} {p3.y:.3f} {p3.z:.3f})"
+            sideclass['plane'] = f"({p1.x:.{F_PRECISION}f} {p1.y:.{F_PRECISION}f} {p1.z:.{F_PRECISION}f}) " \
+                                 f"({p2.x:.{F_PRECISION}f} {p2.y:.{F_PRECISION}f} {p2.z:.{F_PRECISION}f}) " \
+                                 f"({p3.x:.{F_PRECISION}f} {p3.y:.{F_PRECISION}f} {p3.z:.{F_PRECISION}f})"
             sideclass['material'] = material
-            sideclass['uaxis'] = f"[{uv.u_x:.3f} {uv.u_y:.3f} {uv.u_z:.3f} {uv.u_translate:.3f}] {uv.u_scale:.3f}"
-            sideclass['vaxis'] = f"[{uv.v_x:.3f} {uv.v_y:.3f} {uv.v_z:.3f} {uv.v_translate:.3f}] {uv.v_scale:.3f}"
+            sideclass['uaxis'] = f"[{uv.u_x:.{F_PRECISION}f} {uv.u_y:.{F_PRECISION}f} {uv.u_z:.{F_PRECISION}f} {uv.u_translate:.{F_PRECISION}f}] {uv.u_scale:.{F_PRECISION}f}"
+            sideclass['vaxis'] = f"[{uv.v_x:.{F_PRECISION}f} {uv.v_y:.{F_PRECISION}f} {uv.v_z:.{F_PRECISION}f} {uv.v_translate:.{F_PRECISION}f}] {uv.v_scale:.{F_PRECISION}f}"
             return sideclass
 
-    def to_dict(self, ids : list[int]) -> list[dict[str, str | list]]:
+    def to_dict(self, ids : IDs) -> list[dict[str, str | list]]:
         # TODO wedges
         # TODO split concave shapes
         shapeclasses : list[dict[str, str | list]] = []
         shapeclass : dict[str, str | list] = {}
-        shapeclass['id'] = str(ids[0])
-        ids[0] += 1
+        shapeclass['id'] = str(ids.get_and_inc_class_id())
         sides : list[dict] = []
         shapeclass['side'] = sides
         # TODO select sequential points which don't all share a point on an axis
         p1 : Point3 = translate(rotate(Point3(self.points[0].x, self.points[0].y, self.thickness / 2.0), self.angle), self.pos)
         p2 : Point3 = translate(rotate(Point3(self.points[1].x, self.points[1].y, self.thickness / 2.0), self.angle), self.pos)
         p3 : Point3 = translate(rotate(Point3(self.points[2].x, self.points[2].y, self.thickness / 2.0), self.angle), self.pos)
-        sides.append(Shape.make_sideclass(ids[1],
+        sides.append(Shape.make_sideclass(ids.get_and_inc_side_id(),
                                           p1, p2, p3,
                                           self.uvs[Shape.TOP_INDEX],
                                           self.materials[Shape.TOP_INDEX]))
-        ids[1] += 1
         p1 = translate(rotate(Point3(self.points[2].x, self.points[2].y, self.thickness / -2.0), self.angle), self.pos)
         p2 = translate(rotate(Point3(self.points[1].x, self.points[1].y, self.thickness / -2.0), self.angle), self.pos)
         p3 = translate(rotate(Point3(self.points[0].x, self.points[0].y, self.thickness / -2.0), self.angle), self.pos)
-        sides.append(Shape.make_sideclass(ids[1],
+        sides.append(Shape.make_sideclass(ids.get_and_inc_side_id(),
                                           p1, p2, p3,
                                           self.uvs[Shape.BOTTOM_INDEX],
                                           self.materials[Shape.BOTTOM_INDEX]))
-        ids[1] += 1
         for i in range(len(self.points)):
             i2 : int = (i+1)%len(self.points)
             p1 = translate(rotate(Point3(self.points[i2].x, self.points[i2].y, self.thickness / 2.0), self.angle), self.pos)
             p2 = translate(rotate(Point3(self.points[i].x, self.points[i].y, self.thickness / 2.0), self.angle), self.pos)
             p3 = translate(rotate(Point3(self.points[i].x, self.points[i].y, self.thickness / -2.0), self.angle), self.pos)
-            sides.append(Shape.make_sideclass(ids[1],
+            sides.append(Shape.make_sideclass(ids.get_and_inc_side_id(),
                                               p1, p2, p3,
                                               self.uvs[Shape.SIDE_INDEX + i],
                                               self.materials[Shape.SIDE_INDEX + i]))
-            ids[1] += 1
         shapeclasses.append(shapeclass)
-        # TODO figure out passing on parent transforms relative to center or face to children
-        for child in self.children:
+        # TODO figure out passing on parent transforms relative to center or face to child shapes
+        for child in self.child_shapes:
             shapeclasses.extend(child.to_dict(ids))
         return shapeclasses
 
+class Entity:
+    origin : Point3
+
+    def __init__(self, origin : Point3):
+        self.origin = origin
+
+    def to_dict(self, ids : IDs) -> dict[str, str | list]:
+        return {"id": str(ids.get_and_inc_class_id()),
+                "origin": f"{self.origin.x:.{F_PRECISION}f}, {self.origin.y:.{F_PRECISION}f}, {self.origin.z:.{F_PRECISION}f}"}
+
+class Player(Entity):
+    CLASSNAME : str = "info_player_start"
+    angles : Point3
+
+    def __init__(self, origin : Point3, angles : Point3):
+        super().__init__(angles)
+        self.angles = angles
+
+    def to_dict(self, ids : IDs) -> dict[str, str | list]:
+        entityclass : dict[str, str | list] = {}
+        entityclass.update(super().to_dict(ids))
+        entityclass['classname'] = self.CLASSNAME
+        entityclass['angles'] = f"{self.origin.x:.{F_PRECISION}f}, {self.origin.y:.{F_PRECISION}f}, {self.origin.z:.{F_PRECISION}f}"
+        return entityclass
+
 class VMF:
+    shapes : list[Shape]
+    entities : list[Entity]
+
     def __init__(self) -> None:
-        self.shapes : list[Shape] = []
+        self.shapes = []
+        self.entities = []
 
     def add_shape(self, shape : Shape):
         self.shapes.append(shape)
 
+    def add_entity(self, entity : Entity):
+        self.entities.append(entity)
+
     def generate(self) -> str:
-        # world is class ID 1
-        ids = [2, 1]
+        ids : IDs = IDs()
         root : dict[str, str | list] = {}
         root['versioninfo'] = [copy.copy(DEFAULT_VERSIONINFO)]
         root['world'] = [copy.copy(DEFAULT_WORLD)]
-        solids = []
+        root['world'][0]['id'] = str(ids.get_and_inc_class_id())
+        solids : list[dict[str, str | list]] = []
         root['world'][0]['solid'] = solids
         for shape in self.shapes:
             solids.extend(shape.to_dict(ids))
+        root['entity'] = []
+        entities : list[dict[str, str | list]] = root['entity']
+        for entity in self.entities:
+            entities.append(entity.to_dict(ids))
         return SourceFile.dump(root)
 
 def main(args : list[str]):
@@ -418,19 +468,33 @@ def main(args : list[str]):
     materials : list[str] = list(itertools.repeat("brick/brickwall026f", 10))
     materials[0] = "concrete/concretefloor033a"
     materials[1] = "concrete/concretefloor033a"
-    shape : Shape = Shape(gen_polygon(8, 1024.0),
+    octogon : list[Point2] = gen_polygon(8, 1024.0)
+    shape : Shape = Shape(octogon,
                           16.0,
                           materials=materials)
-    shape.add_child(Shape(gen_polygon(8, 1024.0),
-                          16.0,
-                          pos=Point3(0.0, 0.0, 256.0),
-                          materials=materials))
+    shape.add_child_shape(Shape(octogon,
+                                16.0,
+                                pos=Point3(0.0, 0.0, 256.0),
+                                materials=materials))
     materials = list(itertools.repeat("brick/brickwall026f", 6))
-    shape.add_child(Shape(gen_polygon(4, 256.0),
-                          16.0,
-                          pos=Point3(724.0775, 724.0775, 128.0),
-                          materials=materials))
+    side_length : float = hypot(octogon[1].x - octogon[0].x, octogon[1].y - octogon[0].y)
+    wall : list[Point2] = [Point2(-side_length / 2.0 - 1.0, 128.0),
+                           Point2(side_length / 2.0 + 1.0, 128.0),
+                           Point2(side_length / 2.0 + 1.0, -128.0),
+                           Point2(-side_length / 2.0 - 1.0, -128.0)]
+    for i in range(len(octogon)):
+        i2 : int = (i+1)%len(octogon)
+        shape.add_child_shape(Shape(wall,
+                                    16.0,
+                                    pos=Point3((octogon[i].x + octogon[i2].x) / 2.0,
+                                                (octogon[i].y + octogon[i2].y) / 2.0,
+                                                128.0),
+                                    angle=Point3(pi / 2.0, atan2(octogon[i].y - octogon[i2].y,
+                                                                octogon[i].x - octogon[i2].x), 0.0),
+                                    materials=materials))
     v.add_shape(shape)
+    v.add_entity(Player(Point3(0.0, 0.0, 10.0),
+                        Point3(0.0, 0.0, 0.0)))
     print(v.generate())
 
     return
