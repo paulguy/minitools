@@ -362,7 +362,7 @@ class Shape:
                        pos : Point3 = Point3(0.0, 0.0, 0.0),
                        angle : Point3 = Point3(0.0, 0.0, 0.0),
                        uvs : Optional[list[UVPoint]] = None,
-                       materials : Optional[list[str]] = None,
+                       materials : Union[Optional[list[str]], str] = None,
                        top_slope : float = 0.0,
                        bottom_slope : float = 0.0):
         # points is assumed to be clockwise and convex
@@ -385,8 +385,11 @@ class Shape:
                 uvs.append(UVPoint(xdiff / maxdiff, ydiff / maxdiff, 0.0, 0.0, 1.0,
                                    0.0, 0.0, 1.0, 0.0, 1.0))
         self.uvs = uvs
-        if materials is None:
-            materials = list(itertools.repeat(DEFAULT_MATERIAL, len(points) + 2))
+        if not isinstance(materials, list):
+            if materials is None:
+                materials = list(itertools.repeat(DEFAULT_MATERIAL, len(points) + 2))
+            else:
+                materials = list(itertools.repeat(materials, len(points) + 2))
         self.materials = materials
         self.top_slope = top_slope
         self.bottom_slope = bottom_slope
@@ -646,46 +649,3 @@ class VMF:
             # entities have no children, nor generate shapes
             entities_class.append(entity.make_own_dict(ids))
         return SourceFile.dump(root)
-
-def main(args : list[str]):
-    #d = SourceFile(pathlib.Path(args[0])).load()
-    v = VMF()
-
-    materials : list[str] = list(itertools.repeat("brick/brickwall026f", 10))
-    materials[0] = "concrete/concretefloor033a"
-    materials[1] = "concrete/concretefloor033a"
-    polygon : list[Point2] = gen_polygon(8, 1024.0)
-    shape : Shape = Shape(polygon,
-                          16.0,
-                          pos=Point3(0.0, 0.0, 50.0),
-                          materials=materials,
-                          top_slope=0.02,
-                          bottom_slope=0.01)
-    shape.add_child_entity(Player(Point3(0.0, 0.0, 10.0),
-                                  Point3(0.0, 0.0, 0.0)),
-                           Shape.TOP)
-    shape.add_child_shape(Shape(polygon,
-                                16.0,
-                                pos=Point3(0.0, 0.0, 256.0),
-                                materials=materials),
-                          Shape.SHAPE)
-    wallmaterials : list[str] = list(itertools.repeat("brick/brickwall026f", 6))
-    side_length : float = hypot(polygon[1].x - polygon[0].x, polygon[1].y - polygon[0].y)
-    wall : list[Point2] = [Point2(-side_length / 2.0 - 1.0, 128.0),
-                           Point2(side_length / 2.0 + 1.0, 128.0),
-                           Point2(side_length / 2.0 + 1.0, -128.0),
-                           Point2(-side_length / 2.0 - 1.0, -128.0)]
-    for i in range(len(polygon)):
-        i2 : int = (i+1)%len(polygon)
-        wallshape = Shape(wall,
-                          16.0,
-                          pos=Point3(0.0, 0.0, 128.0),
-                          materials=wallmaterials)
-        shape.add_child_shape(wallshape, Shape.SIDE + i)
-    v.add_shape(shape)
-    print(v.generate())
-
-    return
-
-if __name__ == '__main__':
-    main(sys.argv[1:])

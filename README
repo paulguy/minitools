@@ -366,5 +366,8 @@ wiktionary2stardict.py
    might necessarily desire.
 
 vmftool.py
-  USAGE: ./vmftool.py
-   For now, Experiments with Valve Hammer VMF files.  Doesn't do much.
+  Simple library for generating Valve Hammer editor VMF files.
+
+vmftool-test.py
+  USAGE: ./vmftool-test.py
+   Demo of using vmftool, will output a VMF file to stdout.
