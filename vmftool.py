@@ -3,10 +3,11 @@
 import io
 import sys
 import pathlib
-from typing import Optional, Union
+from typing import Optional, Union, Any
 from enum import Enum, auto
 from dataclasses import dataclass
 from collections import namedtuple
+from collections.abc import Callable
 import pprint
 import copy
 import itertools
@@ -222,6 +223,9 @@ class Point2:
     def __add__(self, other : "Point2"):
         return Point2(self.x + other.x, self.y + other.y)
 
+    def __str__(self) -> str:
+        return f"{self.x:.{F_PRECISION}f} {self.y:.{F_PRECISION}f}"
+
     def rotate2(self,
                 angle : float) -> "Point2":
         return Point2((self.x * cos(angle)) - (self.y * sin(angle)),
@@ -235,6 +239,9 @@ class Point3:
 
     def __add__(self, other : "Point3"):
         return Point3(self.x + other.x, self.y + other.y, self.z + other.z)
+
+    def __str__(self) -> str:
+        return f"{self.x:.{F_PRECISION}f} {self.y:.{F_PRECISION}f} {self.z:.{F_PRECISION}f}"
 
     def rotate(self,
                angle : "Point3") -> "Point3":
@@ -275,6 +282,12 @@ class UVPoint():
     v_translate : float
     v_scale : float
 
+    def u_str(self) -> str:
+        return f"[{self.u} {self.u_translate:.{F_PRECISION}f}] {self.u_scale:.{F_PRECISION}f}"
+
+    def v_str(self) -> str:
+        return f"[{self.v} {self.v_translate:.{F_PRECISION}f}] {self.v_scale:.{F_PRECISION}f}"
+
     def rotate(self,
                angle : Point3) -> "UVPoint":
         return UVPoint(self.u.rotate(angle), self.u_translate, self.u_scale,
@@ -311,35 +324,53 @@ def gen_polygon(sides : int,
 
     return points
 
-class Entity:
-    origin : Point3
+@dataclass
+class EntityOption:
+    to_dict : Callable[[Any], str]
+    default : Any
 
-    def __init__(self, origin : Point3):
+@dataclass
+class EntityDef:
+    options : dict[str, EntityOption]
+
+ENTITIES : dict[str, EntityDef] = {
+    "info_player_start": EntityDef({
+        "angles": EntityOption(lambda a: str(a),
+                               Point3(0.0, 0.0, 0.0))
+    })
+}
+
+class Entity:
+    entitydef : EntityDef
+    origin : Point3
+    options : Optional[dict[str, Any]]
+
+    def __init__(self, name : str,
+                       origin : Point3,
+                       options : Optional[dict[str, Any]] = None):
+        self.entitydef = ENTITIES[name]
+        if options is not None:
+            for option in options.keys():
+                if not isinstance(options[option], type(self.entitydef.options[option].default)):
+                    raise TypeError(f"Option type is '{type(options[option])}' but should be '{type(self.entitydef.options[option].default)}'.")
+            self.options = copy.copy(options)
+        else:
+            self.options = None
         self.origin = origin
 
     def make_own_dict(self, ids : IDs,
                             last_pos : Point3 = Point3(0.0, 0.0, 0.0),
                             last_angle : Point3 = Point3(0.0, 0.0, 0.0)) -> dict[str, str | list]:
         pos : Point3 = last_pos + self.origin
-        return {"id": str(ids.get_and_inc_class_id()),
-                "origin": f"{pos.x:.{F_PRECISION}f} {pos.y:.{F_PRECISION}f} {pos.z:.{F_PRECISION}f}"}
-
-class Player(Entity):
-    CLASSNAME : str = "info_player_start"
-    angles : Point3
-
-    def __init__(self, origin : Point3, angles : Point3):
-        super().__init__(angles)
-        self.angles = angles
-
-    def make_own_dict(self, ids : IDs,
-                            last_pos : Point3 = Point3(0.0, 0.0, 0.0),
-                            last_angle : Point3 = Point3(0.0, 0.0, 0.0)) -> dict[str, str | list]:
-        angle : Point3 = last_angle + self.angles
-        entityclass : dict[str, str | list] = super().make_own_dict(ids, last_pos, last_angle)
-        entityclass['classname'] = self.CLASSNAME
-        entityclass['angles'] = f"{angle.x:.{F_PRECISION}f}, {angle.y:.{F_PRECISION}f}, {angle.z:.{F_PRECISION}f}"
-        return entityclass
+        ret : dict[str, str | list] = {"id": str(ids.get_and_inc_class_id()),
+                                       "origin": f"{pos.x:.{F_PRECISION}f} {pos.y:.{F_PRECISION}f} {pos.z:.{F_PRECISION}f}"}
+        if self.options is not None:
+            for option in self.entitydef.options.keys():
+                if option in self.options:
+                    ret[option] = self.entitydef.options[option].to_dict(self.options[option])
+                else:
+                    ret[option] = self.entitydef.options[option].to_dict(self.entitydef.options[option].default)
+        return ret
 
 @dataclass
 class Child:
@@ -440,12 +471,10 @@ class Shape:
                        material : str) -> dict[str, str | list]:
             sideclass : dict[str, str | list] = copy.copy(DEFAULT_SIDE)
             sideclass['id'] = str(side_id)
-            sideclass['plane'] = f"({p1.x:.{F_PRECISION}f} {p1.y:.{F_PRECISION}f} {p1.z:.{F_PRECISION}f}) " \
-                                 f"({p2.x:.{F_PRECISION}f} {p2.y:.{F_PRECISION}f} {p2.z:.{F_PRECISION}f}) " \
-                                 f"({p3.x:.{F_PRECISION}f} {p3.y:.{F_PRECISION}f} {p3.z:.{F_PRECISION}f})"
+            sideclass['plane'] = f"({p1}) ({p2}) ({p3})"
             sideclass['material'] = material
-            sideclass['uaxis'] = f"[{uv.u.x:.{F_PRECISION}f} {uv.u.y:.{F_PRECISION}f} {uv.u.z:.{F_PRECISION}f} {uv.u_translate:.{F_PRECISION}f}] {uv.u_scale:.{F_PRECISION}f}"
-            sideclass['vaxis'] = f"[{uv.v.x:.{F_PRECISION}f} {uv.v.y:.{F_PRECISION}f} {uv.v.z:.{F_PRECISION}f} {uv.v_translate:.{F_PRECISION}f}] {uv.v_scale:.{F_PRECISION}f}"
+            sideclass['uaxis'] = uv.u_str()
+            sideclass['vaxis'] = uv.v_str()
             return sideclass
 
     def make_own_dict(self, ids : IDs,

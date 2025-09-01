@@ -4,7 +4,7 @@ import sys
 from typing import Optional, Union
 from math import hypot
 import itertools
-from vmftool import VMF, Point2, Point3, Shape, gen_polygon, Player
+from vmftool import *
 
 DEFAULT_WALL_THICKNESS : float = 16.0
 
@@ -52,8 +52,9 @@ def main(args : list[str]):
                       "concrete/concretefloor033a",
                       "concrete/concretefloor033a",
                       make_wall=[False, True, True, True, True, True, True, True])
-    shape.add_child_entity(Player(Point3(0.0, 0.0, 10.0),
-                                  Point3(0.0, 0.0, 0.0)),
+    shape.add_child_entity(Entity("info_player_start",
+                                  Point3(0.0, 0.0, 10.0),
+                                  {'angles': Point3(0.0, 0.0, 0.0)}),
                            Shape.TOP)
     v.add_shape(shape)
     print(v.generate())
