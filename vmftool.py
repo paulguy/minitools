@@ -19,8 +19,7 @@ DEFAULT_VERSIONINFO : dict[str, str | list] = {
 	"editorversion": "400",
 	"editorbuild": "8870",
 	"mapversion": "0",
-	"formatversion": "100",
-	"prefab": "0"
+	"formatversion": "100"
 }
 
 DEFAULT_WORLD : dict[str, str | list] = {
@@ -267,8 +266,20 @@ class Point3:
                         point.z)
         return point
 
-UVPoint = namedtuple('UVPoint', ('u_x', 'u_y', 'u_z', 'u_translate', 'u_scale',
-                                 'v_x', 'v_y', 'v_z', 'v_translate', 'v_scale'))
+@dataclass
+class UVPoint():
+    u : Point3
+    u_translate : float
+    u_scale : float
+    v : Point3
+    v_translate : float
+    v_scale : float
+
+    def rotate(self,
+               angle : Point3) -> "UVPoint":
+        return UVPoint(self.u.rotate(angle), self.u_translate, self.u_scale,
+                       self.v.rotate(angle), self.v_translate, self.v_scale)
+
 class IDs:
     class_id : int
     side_id : int
@@ -372,18 +383,18 @@ class Shape:
         self.angle = angle
         # TODO top/bottom angle UVs
         if uvs is None:
-            uvs = [UVPoint(1.0, 0.0, 0.0, 0.0, 1.0,
-                           0.0, 1.0, 0.0, 0.0, 1.0),
-                   UVPoint(1.0, 0.0, 0.0, 0.0, 1.0,
-                           0.0, 1.0, 0.0, 0.0, 1.0)]
+            uvs = [UVPoint(Point3(1.0, 0.0, 0.0), 0.0, 1.0,
+                           Point3(0.0, 1.0, 0.0), 0.0, 1.0),
+                   UVPoint(Point3(1.0, 0.0, 0.0), 0.0, 1.0,
+                           Point3(0.0, 1.0, 0.0), 0.0, 1.0)]
             for i in range(len(points)):
                 p1 : Point2 = points[(i+1)%len(points)]
                 p2 : Point2 = points[i]
                 xdiff : float = p2.x - p1.x
                 ydiff : float = p2.y - p1.y
                 maxdiff : float = max(abs(xdiff), abs(ydiff))
-                uvs.append(UVPoint(xdiff / maxdiff, ydiff / maxdiff, 0.0, 0.0, 1.0,
-                                   0.0, 0.0, 1.0, 0.0, 1.0))
+                uvs.append(UVPoint(Point3(xdiff / maxdiff, ydiff / maxdiff, 0.0), 0.0, 1.0,
+                                   Point3(0.0, 0.0, 1.0), 0.0, 1.0))
         self.uvs = uvs
         if not isinstance(materials, list):
             if materials is None:
@@ -433,8 +444,8 @@ class Shape:
                                  f"({p2.x:.{F_PRECISION}f} {p2.y:.{F_PRECISION}f} {p2.z:.{F_PRECISION}f}) " \
                                  f"({p3.x:.{F_PRECISION}f} {p3.y:.{F_PRECISION}f} {p3.z:.{F_PRECISION}f})"
             sideclass['material'] = material
-            sideclass['uaxis'] = f"[{uv.u_x:.{F_PRECISION}f} {uv.u_y:.{F_PRECISION}f} {uv.u_z:.{F_PRECISION}f} {uv.u_translate:.{F_PRECISION}f}] {uv.u_scale:.{F_PRECISION}f}"
-            sideclass['vaxis'] = f"[{uv.v_x:.{F_PRECISION}f} {uv.v_y:.{F_PRECISION}f} {uv.v_z:.{F_PRECISION}f} {uv.v_translate:.{F_PRECISION}f}] {uv.v_scale:.{F_PRECISION}f}"
+            sideclass['uaxis'] = f"[{uv.u.x:.{F_PRECISION}f} {uv.u.y:.{F_PRECISION}f} {uv.u.z:.{F_PRECISION}f} {uv.u_translate:.{F_PRECISION}f}] {uv.u_scale:.{F_PRECISION}f}"
+            sideclass['vaxis'] = f"[{uv.v.x:.{F_PRECISION}f} {uv.v.y:.{F_PRECISION}f} {uv.v.z:.{F_PRECISION}f} {uv.v_translate:.{F_PRECISION}f}] {uv.v_scale:.{F_PRECISION}f}"
             return sideclass
 
     def make_own_dict(self, ids : IDs,
@@ -455,7 +466,7 @@ class Shape:
                              (self.thickness / 2.0) + ((self.points[2].y - y_origin) * self.top_slope)).rotate(angle) + pos
         sides.append(Shape.make_sideclass(ids.get_and_inc_side_id(),
                                           p1, p2, p3,
-                                          self.uvs[Shape.TOP],
+                                          self.uvs[Shape.TOP].rotate(angle),
                                           self.materials[Shape.TOP]))
         p1 = Point3(self.points[2].x,
                     self.points[2].y,
@@ -466,7 +477,7 @@ class Shape:
         p3 = Point3(self.points[0].x, self.points[0].y, self.thickness / -2.0).rotate(angle) + pos
         sides.append(Shape.make_sideclass(ids.get_and_inc_side_id(),
                                           p1, p2, p3,
-                                          self.uvs[Shape.BOTTOM],
+                                          self.uvs[Shape.BOTTOM].rotate(angle),
                                           self.materials[Shape.BOTTOM]))
         for i in range(len(self.points)):
             i2 : int = (i+1)%len(self.points)
@@ -475,7 +486,7 @@ class Shape:
             p3 = Point3(self.points[i].x, self.points[i].y, self.thickness / -2.0).rotate(angle) + pos
             sides.append(Shape.make_sideclass(ids.get_and_inc_side_id(),
                                               p1, p2, p3,
-                                              self.uvs[Shape.SIDE + i],
+                                              self.uvs[Shape.SIDE + i].rotate(angle),
                                               self.materials[Shape.SIDE + i]))
         return shapeclass
 
@@ -491,16 +502,16 @@ class Shape:
                 entityclasses.append(child_entity.child.make_own_dict(ids, last_pos + self.pos, last_angle + self.angle))
             elif child_entity.relative == Shape.TOP:
                 next_pos = Point3(0.0, 0.0, (self.thickness / 2.0) + (self.top_slope * -y_origin)).rotate(self.angle) + self.pos
-                next_angle = Point3(self.angle.x + atan2(self.top_slope, 1.0), self.angle.y, self.angle.z)
+                next_angle : Point3 = Point3(self.angle.x + atan2(self.top_slope, 1.0), self.angle.y, self.angle.z)
                 entityclasses.append(child_entity.child.make_own_dict(ids,
-                                                                    last_pos + next_pos,
-                                                                    last_angle + next_angle))
+                                                                      last_pos + next_pos,
+                                                                      last_angle + next_angle))
             elif child_entity.relative == Shape.BOTTOM:
                 next_pos = Point3(0.0, 0.0, (self.thickness / -2.0) + (self.top_slope * -y_origin)).rotate(self.angle) + self.pos
                 next_angle = Point3(self.angle.x - atan2(self.bottom_slope, 1.0), self.angle.y, self.angle.z)
                 entityclasses.append(child_entity.child.make_own_dict(ids,
-                                                                    last_pos + next_pos,
-                                                                    last_angle + next_angle))
+                                                                      last_pos + next_pos,
+                                                                      last_angle + next_angle))
             else: # side
                 sp1 = self.points[child_entity.relative - self.SIDE]
                 sp2 = self.points[(child_entity.relative - self.SIDE + 1)%len(self.points)]
@@ -514,8 +525,8 @@ class Shape:
                 side_angle = atan2(sp2.x - sp1.x, sp2.y - sp1.y)
                 next_angle = Point3(self.angle.x + side_angle, self.angle.y + (pi / 2.0), self.angle.z + (pi / 2.0))
                 entityclasses.append(child_entity.child.make_own_dict(ids,
-                                                                    last_pos + next_pos,
-                                                                    last_angle + next_angle))
+                                                                      last_pos + next_pos,
+                                                                      last_angle + next_angle))
 
         return entityclasses
 
@@ -547,6 +558,8 @@ class Shape:
             cur : Shape = child.child
             pos : Point3 = cur.pos
             angle : Point3 = cur.angle
+
+            entityclasses.extend(cur.child_entity_dicts(ids, last_pos, last_angle, y_origin))
 
             if child.relative < 0: # shape origin
                 # just add the angle and position of this shape's origin
@@ -593,8 +606,6 @@ class Shape:
                 last_pos += cur.pos
                 last_angle += cur.angle
                 y_origin = parent.points[0].y
-
-                entityclasses.extend(parent.child_entity_dicts(ids, last_pos, last_angle, y_origin))
             else:
                 cur_frame.index += 1
                 while cur_frame.index == len(cur_frame.shape.child_shapes):
@@ -620,10 +631,12 @@ class Shape:
 class VMF:
     shapes : list[Shape]
     entities : list[Entity]
+    prefab : bool
 
-    def __init__(self) -> None:
+    def __init__(self, prefab : bool = False) -> None:
         self.shapes = []
         self.entities = []
+        self.prefab = prefab
 
     def add_shape(self, shape : Shape):
         self.shapes.append(shape)
@@ -635,6 +648,7 @@ class VMF:
         ids : IDs = IDs()
         root : dict[str, str | list] = {}
         root['versioninfo'] = [copy.copy(DEFAULT_VERSIONINFO)]
+        root['versioninfo'][0]['prefab'] = '1' if self.prefab else '0'
         root['world'] = [copy.copy(DEFAULT_WORLD)]
         root['world'][0]['id'] = str(ids.get_and_inc_class_id())
         solids_class : list[dict[str, str | list]] = []
