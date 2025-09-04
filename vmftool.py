@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import io
-import sys
 import pathlib
 from typing import Optional, Union, Any
 from enum import Enum, auto
@@ -12,6 +11,7 @@ import pprint
 import copy
 import itertools
 from math import pi, tau, sin, cos, tan, hypot, atan2
+from abc import ABC, abstractmethod
 
 F_PRECISION : int = 3
 DEFAULT_MATERIAL = "BLACK_OUTLINE"
@@ -324,75 +324,122 @@ def gen_polygon(sides : int,
 
     return points
 
-@dataclass
-class EntityOption:
-    to_dict : Callable[[Any], str]
-    default : Any
-
-@dataclass
-class EntityDef:
-    options : dict[str, EntityOption]
-
-ENTITIES : dict[str, EntityDef] = {
-    "info_player_start": EntityDef({
-        "angles": EntityOption(lambda a: str(a),
-                               Point3(0.0, 0.0, 0.0))
-    })
-}
-
-class Entity:
-    entitydef : EntityDef
-    origin : Point3
-    options : Optional[dict[str, Any]]
-
-    def __init__(self, name : str,
-                       origin : Point3,
-                       options : Optional[dict[str, Any]] = None):
-        self.entitydef = ENTITIES[name]
-        if options is not None:
-            for option in options.keys():
-                if not isinstance(options[option], type(self.entitydef.options[option].default)):
-                    raise TypeError(f"Option type is '{type(options[option])}' but should be '{type(self.entitydef.options[option].default)}'.")
-            self.options = copy.copy(options)
-        else:
-            self.options = None
-        self.origin = origin
-
-    def make_own_dict(self, ids : IDs,
-                            last_pos : Point3 = Point3(0.0, 0.0, 0.0),
-                            last_angle : Point3 = Point3(0.0, 0.0, 0.0)) -> dict[str, str | list]:
-        pos : Point3 = last_pos + self.origin
-        ret : dict[str, str | list] = {"id": str(ids.get_and_inc_class_id()),
-                                       "origin": f"{pos.x:.{F_PRECISION}f} {pos.y:.{F_PRECISION}f} {pos.z:.{F_PRECISION}f}"}
-        if self.options is not None:
-            for option in self.entitydef.options.keys():
-                if option in self.options:
-                    ret[option] = self.entitydef.options[option].to_dict(self.options[option])
-                else:
-                    ret[option] = self.entitydef.options[option].to_dict(self.entitydef.options[option].default)
-        return ret
-
-@dataclass
-class Child:
-    child : Union[Entity, "Shape"]
-    relative : int
-
-@dataclass
-class ShapeStackFrame:
-    shape : "Shape"
-    index : int
+class Shape(ABC):
     pos : Point3
     angle : Point3
+    child_shapes : list["ChildShape"]
+    child_entities : list["ChildEntity"]
 
-class Shape:
+    @abstractmethod
+    def __init__(self, pos : Point3 = Point3(0.0, 0.0, 0.0),
+                       angle : Point3 = Point3(0.0, 0.0, 0.0)):
+        self.pos = pos
+        self.angle = angle
+        self.child_shapes = []
+        self.child_entities = []
+
+    @abstractmethod
+    def make_own_dict(self, ids : IDs,
+                            pos : Point3,
+                            angle : Point3) -> dict[str, str | list]:
+        pass
+
+    @abstractmethod
+    def get_child_offset(self, relative : int) -> tuple[Point3, Point3]:
+        pass
+
+    @staticmethod
+    def make_sideclass(side_id : int,
+                       p1 : Point3,
+                       p2 : Point3,
+                       p3 : Point3,
+                       uv : UVPoint,
+                       material : str) -> dict[str, str | list]:
+        sideclass : dict[str, str | list] = copy.copy(DEFAULT_SIDE)
+        sideclass['id'] = str(side_id)
+        sideclass['plane'] = f"({p1}) ({p2}) ({p3})"
+        sideclass['material'] = material
+        sideclass['uaxis'] = uv.u_str()
+        sideclass['vaxis'] = uv.v_str()
+        return sideclass
+
+    def add_child_shape(self, shape : "Shape", relative : int):
+        self.child_shapes.append(ChildShape(relative, shape))
+
+    def add_child_entity(self, entity : "Entity", relative : int):
+        self.child_entities.append(ChildEntity(relative, entity))
+
+    def child_entity_dicts(self, ids : IDs,
+                                 last_pos : Point3,
+                                 last_angle : Point3) -> list[dict[str, str | list]]:
+        return [child_entity.entity.make_own_dict(ids, last_pos + self.pos, last_angle + self.angle) for child_entity in self.child_entities]
+
+    def to_dict(self, ids : IDs) -> tuple[list[dict[str, str | list]],
+                                          list[dict[str, str | list]]]:
+        shapeclasses : list[dict[str, str | list]] = []
+        entityclasses : list[dict[str, str | list]] = []
+        shapeclasses.append(self.make_own_dict(ids,
+                                               Point3(0.0, 0.0, 0.0),
+                                               Point3(0.0, 0.0, 0.0)))
+        entityclasses.extend(self.child_entity_dicts(ids,
+                                                     Point3(0.0, 0.0, 0.0),
+                                                     Point3(0.0, 0.0, 0.0)))
+
+        stack : list["ChildStackFrame"] = [ChildStackFrame(self,
+                                                           0,
+                                                           Point3(0.0, 0.0, 0.0),
+                                                           Point3(0.0, 0.0, 0.0))]
+
+        cur_frame : "ChildStackFrame" = stack[-1]
+        parent : Shape = cur_frame.child
+        last_pos : Point3 = Point3(0.0, 0.0, 0.0)
+        last_angle : Point3 = Point3(0.0, 0.0, 0.0)
+
+        process : bool = True
+        while process:
+            # get the current shape to process
+            child : ChildShape = cur_frame.child.child_shapes[cur_frame.index]
+            cur : Shape = child.shape
+
+            next_pos, next_angle = parent.get_child_offset(child.relative)
+            shapeclasses.append(cur.make_own_dict(ids, last_pos + next_pos, last_angle + next_angle))
+            entityclasses.extend(cur.child_entity_dicts(ids, last_pos + next_pos, last_angle + next_angle))
+
+            if len(cur.child_shapes) > 0:
+                # if the shape has any child shapes, add it to the stack to start processing through them
+                stack.append(ChildStackFrame(cur, 0, last_pos, last_angle))
+                cur_frame = stack[-1]
+
+                # update current status variables
+                last_pos += next_pos
+                last_angle += next_angle
+            else:
+                cur_frame.index += 1
+                while cur_frame.index == len(cur_frame.child.child_shapes):
+                    # if there are no more, go back up the stack
+                    del stack[-1]
+                    # if there's no more stack, there's nothing left to do
+                    if len(stack) == 0:
+                        process = False
+                        break
+
+                    cur_frame = stack[-1]
+                    # advance to the next entry
+                    cur_frame.index += 1
+
+                    # update current status variables
+                    last_pos = cur_frame.pos
+                    last_angle = cur_frame.angle
+
+        return shapeclasses, entityclasses
+
+class PolygonShape(Shape):
     points : list[Point2]
     uvs : list[UVPoint]
     materials : list[str]
     thickness : float
     top_slope : float
     bottom_slope : float
-    child_shapes : list[Child]
-    child_entities : list[Child]
 
     SHAPE = -1
     TOP = 0
@@ -407,11 +454,10 @@ class Shape:
                        materials : Union[Optional[list[str]], str] = None,
                        top_slope : float = 0.0,
                        bottom_slope : float = 0.0):
+        super().__init__(pos, angle)
         # points is assumed to be clockwise and convex
         self.points = points
         self.thickness = thickness
-        self.pos = pos
-        self.angle = angle
         # TODO top/bottom angle UVs
         if uvs is None:
             uvs = [UVPoint(Point3(1.0, 0.0, 0.0), 0.0, 1.0,
@@ -435,14 +481,6 @@ class Shape:
         self.materials = materials
         self.top_slope = top_slope
         self.bottom_slope = bottom_slope
-        self.child_shapes = []
-        self.child_entities = []
-
-    def add_child_shape(self, child : "Shape", relative : int):
-        self.child_shapes.append(Child(child, relative))
-
-    def add_child_entity(self, child : Entity, relative : int):
-        self.child_entities.append(Child(child, relative))
 
     def set_one_material(self, idx : int, material : str):
         self.materials[idx] = material
@@ -451,40 +489,59 @@ class Shape:
         self.materials = list(itertools.repeat(material, len(self.points) + 2))
 
     def set_top_material(self, material : str):
-        self.materials[Shape.TOP] = material
+        self.materials[PolygonShape.TOP] = material
 
     def set_bottom_material(self, material : str):
-        self.materials[Shape.BOTTOM] = material
+        self.materials[PolygonShape.BOTTOM] = material
 
     def set_side_material(self, idx : int, material : str):
-        self.materials[idx - Shape.SIDE] = material
+        self.materials[idx - PolygonShape.SIDE] = material
 
     def set_all_side_materials(self, material : str):
         self.materials[2:] = list(itertools.repeat(material, len(self.points)))
 
-    @staticmethod
-    def make_sideclass(side_id : int,
-                       p1 : Point3,
-                       p2 : Point3,
-                       p3 : Point3,
-                       uv : UVPoint,
-                       material : str) -> dict[str, str | list]:
-            sideclass : dict[str, str | list] = copy.copy(DEFAULT_SIDE)
-            sideclass['id'] = str(side_id)
-            sideclass['plane'] = f"({p1}) ({p2}) ({p3})"
-            sideclass['material'] = material
-            sideclass['uaxis'] = uv.u_str()
-            sideclass['vaxis'] = uv.v_str()
-            return sideclass
+    def get_child_offset(self, relative : int) -> tuple[Point3, Point3]:
+        y_origin : float = self.points[0].y
+
+        if relative < 0: # shape origin
+            # just add the angle and position of this shape's origin
+            return self.pos, self.angle
+        elif relative == PolygonShape.TOP:
+            # find the top angle with slope as well as the offset from the origin with slope, rotated by this shape's angle
+            return Point3(0.0, 0.0, (self.thickness / 2.0) + (self.top_slope * -y_origin)).rotate(self.angle) + self.pos, \
+                   Point3(self.angle.x + atan2(self.top_slope, 1.0), self.angle.y, self.angle.z)
+        elif relative == PolygonShape.BOTTOM:
+            # TODO probably wrong
+            # mostly the same as above
+            # rotate everything upside down
+            return Point3(0.0, 0.0, (self.thickness / -2.0) + (self.top_slope * -y_origin)).rotate(self.angle) + self.pos, \
+                   Point3(self.angle.x - atan2(self.bottom_slope, 1.0), self.angle.y, self.angle.z)
+        # side
+        sp1 : Point2 = self.points[relative - PolygonShape.SIDE]
+        sp2 : Point2 = self.points[(relative - PolygonShape.SIDE + 1)%len(self.points)]
+        sp1_ry : float = sp1.y - y_origin
+        sp2_ry : float = sp2.y - y_origin
+        z_offset : float = ((sp1_ry * self.top_slope) + 
+                            (sp1_ry * self.bottom_slope) +
+                            (sp2_ry * self.top_slope) +
+                            (sp2_ry * self.bottom_slope)) / 4.0
+        side_angle : float = atan2(sp2.x - sp1.x, sp2.y - sp1.y)
+        # rotate everything to be flat with the side
+        return Point3((sp1.x + sp2.x) / 2.0, (sp1.y + sp2.y) / 2.0, z_offset).rotate(self.angle) + self.pos, \
+               Point3(self.angle.x + side_angle, self.angle.y + (pi / 2.0), self.angle.z + (pi / 2.0))
 
     def make_own_dict(self, ids : IDs,
-                            pos : Point3,
-                            angle : Point3) -> dict[str, str | list]:
-        y_origin : float = self.points[0].y
+                            last_pos : Point3,
+                            last_angle : Point3) -> dict[str, str | list]:
+        pos : Point3 = last_pos + self.pos
+        angle : Point3 = last_angle + self.angle
+
         shapeclass : dict[str, str | list] = {}
         shapeclass['id'] = str(ids.get_and_inc_class_id())
         sides : list[dict] = []
         shapeclass['side'] = sides
+
+        y_origin : float = self.points[0].y
         # TODO select sequential points which don't all share a point on an axis
         p1 : Point3 = Point3(self.points[0].x, self.points[0].y, self.thickness / 2.0).rotate(angle) + pos
         p2 : Point3 = Point3(self.points[1].x,
@@ -495,8 +552,8 @@ class Shape:
                              (self.thickness / 2.0) + ((self.points[2].y - y_origin) * self.top_slope)).rotate(angle) + pos
         sides.append(Shape.make_sideclass(ids.get_and_inc_side_id(),
                                           p1, p2, p3,
-                                          self.uvs[Shape.TOP].rotate(angle),
-                                          self.materials[Shape.TOP]))
+                                          self.uvs[PolygonShape.TOP].rotate(angle),
+                                          self.materials[PolygonShape.TOP]))
         p1 = Point3(self.points[2].x,
                     self.points[2].y,
                     (self.thickness / -2.0) + ((self.points[2].y - y_origin) * self.bottom_slope)).rotate(angle) + pos
@@ -506,8 +563,8 @@ class Shape:
         p3 = Point3(self.points[0].x, self.points[0].y, self.thickness / -2.0).rotate(angle) + pos
         sides.append(Shape.make_sideclass(ids.get_and_inc_side_id(),
                                           p1, p2, p3,
-                                          self.uvs[Shape.BOTTOM].rotate(angle),
-                                          self.materials[Shape.BOTTOM]))
+                                          self.uvs[PolygonShape.BOTTOM].rotate(angle),
+                                          self.materials[PolygonShape.BOTTOM]))
         for i in range(len(self.points)):
             i2 : int = (i+1)%len(self.points)
             p1 = Point3(self.points[i2].x, self.points[i2].y, self.thickness / 2.0).rotate(angle) + pos
@@ -515,147 +572,90 @@ class Shape:
             p3 = Point3(self.points[i].x, self.points[i].y, self.thickness / -2.0).rotate(angle) + pos
             sides.append(Shape.make_sideclass(ids.get_and_inc_side_id(),
                                               p1, p2, p3,
-                                              self.uvs[Shape.SIDE + i].rotate(angle),
-                                              self.materials[Shape.SIDE + i]))
+                                              self.uvs[PolygonShape.SIDE + i].rotate(angle),
+                                              self.materials[PolygonShape.SIDE + i]))
         return shapeclass
 
-    def child_entity_dicts(self, ids : IDs,
-                                 last_pos : Point3,
-                                 last_angle : Point3,
-                                 y_origin : float) -> list[dict[str, str | list]]:
-        entityclasses : list[dict[str, str | list]] = []
+@dataclass
+class EntityOption:
+    to_dict : Callable[[Any], str]
+    default : Any
 
-        for child_entity in self.child_entities:
-            child : Entity = child_entity.child
-            if child_entity.relative < 0: # shape origin
-                entityclasses.append(child_entity.child.make_own_dict(ids, last_pos + self.pos, last_angle + self.angle))
-            elif child_entity.relative == Shape.TOP:
-                next_pos = Point3(0.0, 0.0, (self.thickness / 2.0) + (self.top_slope * -y_origin)).rotate(self.angle) + self.pos
-                next_angle : Point3 = Point3(self.angle.x + atan2(self.top_slope, 1.0), self.angle.y, self.angle.z)
-                entityclasses.append(child_entity.child.make_own_dict(ids,
-                                                                      last_pos + next_pos,
-                                                                      last_angle + next_angle))
-            elif child_entity.relative == Shape.BOTTOM:
-                next_pos = Point3(0.0, 0.0, (self.thickness / -2.0) + (self.top_slope * -y_origin)).rotate(self.angle) + self.pos
-                next_angle = Point3(self.angle.x - atan2(self.bottom_slope, 1.0), self.angle.y, self.angle.z)
-                entityclasses.append(child_entity.child.make_own_dict(ids,
-                                                                      last_pos + next_pos,
-                                                                      last_angle + next_angle))
-            else: # side
-                sp1 = self.points[child_entity.relative - self.SIDE]
-                sp2 = self.points[(child_entity.relative - self.SIDE + 1)%len(self.points)]
-                sp1_ry = sp1.y - y_origin
-                sp2_ry = sp2.y - y_origin
-                z_offset = ((sp1_ry * self.top_slope) + 
-                            (sp1_ry * self.bottom_slope) +
-                            (sp2_ry * self.top_slope) +
-                            (sp2_ry * self.bottom_slope)) / 4.0
-                next_pos = Point3((sp1.x + sp2.x) / 2.0, (sp1.y + sp2.y) / 2.0, z_offset).rotate(self.angle) + self.pos
-                side_angle = atan2(sp2.x - sp1.x, sp2.y - sp1.y)
-                next_angle = Point3(self.angle.x + side_angle, self.angle.y + (pi / 2.0), self.angle.z + (pi / 2.0))
-                entityclasses.append(child_entity.child.make_own_dict(ids,
-                                                                      last_pos + next_pos,
-                                                                      last_angle + next_angle))
+@dataclass
+class EntityDef:
+    name : str
+    options : dict[str, EntityOption]
 
-        return entityclasses
+ENTITIES : dict[str, EntityDef] = {
+    "info_player_start": EntityDef("info_player_start", {
+        "angles": EntityOption(lambda a: str(a),
+                               Point3(0.0, 0.0, 0.0))
+    })
+}
 
-    def to_dict(self, ids : IDs) -> tuple[list[dict[str, str | list]],
-                                          list[dict[str, str | list]]]:
-        shapeclasses : list[dict[str, str | list]] = []
-        entityclasses : list[dict[str, str | list]] = []
-        shapeclasses.append(self.make_own_dict(ids, self.pos, self.angle))
-        entityclasses.extend(self.child_entity_dicts(ids,
-                                                     Point3(0.0, 0.0, 0.0),
-                                                     Point3(0.0, 0.0, 0.0),
-                                                     self.points[0].y))
+class Entity:
+    entitydef : EntityDef
+    origin : Point3
+    options : Optional[dict[str, Any]]
+    solid : list[Shape]
 
-        stack : list[ShapeStackFrame] = [ShapeStackFrame(self,
-                                                         0,
-                                                         Point3(0.0, 0.0, 0.0),
-                                                         Point3(0.0, 0.0, 0.0))]
+    def __init__(self, name : str,
+                       origin : Point3,
+                       options : Optional[dict[str, Any]] = None):
+        self.entitydef = ENTITIES[name]
+        if options is not None:
+            for option in options.keys():
+                if not isinstance(options[option], type(self.entitydef.options[option].default)):
+                    raise TypeError(f"Option type is '{type(options[option])}' but should be '{type(self.entitydef.options[option].default)}'.")
+            self.options = copy.copy(options)
+        else:
+            self.options = None
+        self.origin = origin
+        self.solid = []
 
-        cur_frame : ShapeStackFrame = stack[-1]
-        parent : Shape = cur_frame.shape
-        last_pos : Point3 = parent.pos
-        last_angle : Point3 = parent.angle
-        y_origin : float = parent.points[0].y
+    def add_shape(self, shape : Shape):
+        self.solid.append(shape)
 
-        process : bool = True
-        while process:
-            # get the current shape to process
-            child : Child = cur_frame.shape.child_shapes[cur_frame.index]
-            cur : Shape = child.child
-            pos : Point3 = cur.pos
-            angle : Point3 = cur.angle
+    def make_own_dict(self, ids : IDs,
+                            last_pos : Point3 = Point3(0.0, 0.0, 0.0),
+                            last_angle : Point3 = Point3(0.0, 0.0, 0.0)) -> dict[str, str | list]:
+        pos : Point3 = last_pos + self.origin
+        ret : dict[str, str | list] = {"id": str(ids.get_and_inc_class_id()),
+                                       "classname": self.entitydef.name,
+                                       "origin": str(pos)}
+        if self.options is not None:
+            for option in self.entitydef.options.keys():
+                if option in self.options:
+                    ret[option] = self.entitydef.options[option].to_dict(self.options[option])
+                else:
+                    ret[option] = self.entitydef.options[option].to_dict(self.entitydef.options[option].default)
+        if len(self.solid) > 0:
+            solids_class : list[dict[str, str | list]] = []
+            ret['solid'] = solids_class
+            for solid in self.solid:
+                # this ends up being recursive, but for the moment, brush entities with children is unsupported.
+                solids, _ = solid.to_dict(ids)
+                solids_class.extend(solids)
+        return ret
 
-            entityclasses.extend(cur.child_entity_dicts(ids, last_pos, last_angle, y_origin))
+@dataclass
+class Child:
+    relative : int
 
-            if child.relative < 0: # shape origin
-                # just add the angle and position of this shape's origin
-                shapeclasses.append(cur.make_own_dict(ids, last_pos + pos, last_angle + angle))
-            elif child.relative == Shape.TOP:
-                # find the top angle with slope as well as the offset from the origin with slope, rotated by this shape's angle
-                next_pos : Point3 = Point3(0.0, 0.0, (cur.thickness / 2.0) + (cur.top_slope * -y_origin)).rotate(angle) + pos
-                next_angle : Point3 = Point3(angle.x + atan2(cur.top_slope, 1.0), angle.y, angle.z)
-                shapeclasses.append(cur.make_own_dict(ids,
-                                                      last_pos + next_pos,
-                                                      last_angle + next_angle))
-            elif child.relative == Shape.BOTTOM:
-                # TODO probably wrong
-                # mostly the same as above
-                next_pos = Point3(0.0, 0.0, (cur.thickness / -2.0) + (cur.top_slope * -y_origin)).rotate(angle) + pos
-                # rotate everything upside down
-                next_angle = Point3(angle.x - atan2(cur.bottom_slope, 1.0), angle.y, angle.z)
-                shapeclasses.append(cur.make_own_dict(ids,
-                                                      last_pos + next_pos,
-                                                      last_angle + next_angle))
-            else: # side
-                sp1 : Point2 = parent.points[child.relative - Shape.SIDE]
-                sp2 : Point2 = parent.points[(child.relative - Shape.SIDE + 1)%len(parent.points)]
-                sp1_ry : float = sp1.y - y_origin
-                sp2_ry : float = sp2.y - y_origin
-                z_offset : float = ((sp1_ry * parent.top_slope) + 
-                                    (sp1_ry * parent.bottom_slope) +
-                                    (sp2_ry * parent.top_slope) +
-                                    (sp2_ry * parent.bottom_slope)) / 4.0
-                next_pos = Point3((sp1.x + sp2.x) / 2.0, (sp1.y + sp2.y) / 2.0, z_offset).rotate(angle) + pos
-                # rotate everything to be flat with the side
-                side_angle : float = atan2(sp2.x - sp1.x, sp2.y - sp1.y)
-                next_angle = Point3(angle.x + side_angle, angle.y + (pi / 2.0), angle.z + (pi / 2.0))
-                shapeclasses.append(cur.make_own_dict(ids,
-                                                      last_pos + next_pos,
-                                                      last_angle + next_angle))
+@dataclass
+class ChildShape(Child):
+    shape : Shape
 
-            if len(cur.child_shapes) > 0:
-                # if the shape has any child shapes, add it to the stack to start processing through them
-                stack.append(ShapeStackFrame(cur, 0, last_pos, last_angle))
-                cur_frame = stack[-1]
-                # update current status variables
-                parent = cur_frame.shape
-                last_pos += cur.pos
-                last_angle += cur.angle
-                y_origin = parent.points[0].y
-            else:
-                cur_frame.index += 1
-                while cur_frame.index == len(cur_frame.shape.child_shapes):
-                    # if there are no more, go back up the stack
-                    del stack[-1]
-                    # if there's no more stack, there's nothing left to do
-                    if len(stack) == 0:
-                        process = False
-                        break
+@dataclass
+class ChildEntity(Child):
+    entity : Entity
 
-                    cur_frame = stack[-1]
-                    # update current status variables
-                    parent = cur_frame.shape
-                    last_pos = cur_frame.pos
-                    last_angle = cur_frame.angle
-                    y_origin = parent.points[0].y
-
-                    # advance to the next entry
-                    cur_frame.index += 1
-
-        return shapeclasses, entityclasses
+@dataclass
+class ChildStackFrame:
+    child : Union[Shape, Entity]
+    index : int
+    pos : Point3
+    angle : Point3
 
 class VMF:
     shapes : list[Shape]
