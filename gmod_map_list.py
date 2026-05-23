@@ -14,6 +14,14 @@ import itertools
 import lzma
 import hashlib
 import threading
+import math
+
+try:
+    from PIL import Image, UnidentifiedImageError
+except ModuleNotFoundError:
+    Image = None
+
+THUMB_WIDTH = 64
 
 # relative to home
 DEFAULT_STEAM_PATH = pathlib.PurePath(".local", "share", "Steam")
@@ -64,6 +72,11 @@ SIZE_UNITS = ('b', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB')
 # 1MB seems good
 READ_SIZE = 1024*1024
 
+CHARS4 = array.array('w', ' 𜺨𜴀▘𜴉𜴊🯦𜴍𜺣𜴶𜴹𜴺▖𜵅𜵈▌𜺫🮂𜴁𜴂𜴋𜴌𜴎𜴏𜴷𜴸𜴻𜴼𜵆𜵇𜵉𜵊𜴃𜴄𜴆𜴇𜴐𜴑𜴔𜴕𜴽𜴾𜵁𜵂𜵋𜵌𜵎𜵏▝𜴅𜴈▀𜴒𜴓𜴖𜴗𜴿𜵀𜵃𜵄▞𜵍𜵐▛'
+                          '𜴘𜴙𜴜𜴝𜴧𜴨𜴫𜴬𜵑𜵒𜵕𜵖𜵡𜵢𜵥𜵦𜴚𜴛𜴞𜴟𜴩𜴪𜴭𜴮𜵓𜵔𜵗𜵘𜵣𜵤𜵧𜵨🯧𜴠𜴣𜴤𜴯𜴰𜴳𜴴𜵙𜵚𜵝𜵞𜵩𜵪𜵭𜵮𜴡𜴢𜴥𜴦𜴱𜴲𜴵🮅𜵛𜵜𜵟𜵠𜵫𜵬𜵯𜵰'
+                          '𜺠𜵱𜵴𜵵𜶀𜶁𜶄𜶅▂𜶬𜶯𜶰𜶻𜶼𜶿𜷀𜵲𜵳𜵶𜵷𜶂𜶃𜶆𜶇𜶭𜶮𜶱𜶲𜶽𜶾𜷁𜷂𜵸𜵹𜵼𜵽𜶈𜶉𜶌𜶍𜶳𜶴𜶷𜶸𜷃𜷄𜷇𜷈𜵺𜵻𜵾𜵿𜶊𜶋𜶎𜶏𜶵𜶶𜶹𜶺𜷅𜷆𜷉𜷊'
+                          '▗𜶐𜶓▚𜶜𜶝𜶠𜶡𜷋𜷌𜷏𜷐▄𜷛𜷞▙𜶑𜶒𜶔𜶕𜶞𜶟𜶢𜶣𜷍𜷎𜷑𜷒𜷜𜷝𜷟𜷠𜶖𜶗𜶙𜶚𜶤𜶥𜶨𜶩𜷓𜷔𜷗𜷘𜷡𜷢▆𜷤▐𜶘𜶛▜𜶦𜶧𜶪𜶫𜷕𜷖𜷙𜷚▟𜷣𜷥█')
+
 @dataclass
 class FileHash():
     size : int
@@ -87,7 +100,6 @@ def human_readable_size(size : int):
 
     while size >= 1024 and thousands < len(SIZE_UNITS) - 1:
         # probably a better way to do this with number formats but meh
-        thousandths = int(size / 1024 * 10 % 10)
         size //= 1024
         thousands += 1
 
@@ -100,22 +112,28 @@ class ValveFile:
     # stuff for avoiding seeking for the LZMA decompressor
     READ_BUFFER_SIZE = 32768
 
+    def consume_buffer(self, count : int, dispose : bool = False) -> bytes:
+        count = min(count, self.filled)
+
+        if not dispose:
+            retbuf = self.buffer[:count].tobytes()
+
+        if self.filled - count > 0:
+            # would be faster to do a ring buffer but mehhhhhhh
+            self.buffer[:self.filled-count] = self.buffer[count:self.filled]
+        self.filled -= count
+
+        if not dispose:
+            return retbuf
+
+        return b''
+ 
     def read(self, count : int) -> bytes:
         if self.file is None:
             return b''
 
-        retbuf = b''
-
         # try to empty what's in the buffer first
-        if self.filled > 0:
-            if count < self.filled:
-                retbuf = self.buffer[:count].tobytes()
-                # would be faster to do a ring buffer but mehhhhhhh
-                self.buffer[:self.filled-count] = self.buffer[count:self.filled]
-                self.filled -= count
-            else:
-                retbuf = self.buffer[:self.filled].tobytes()
-                self.filled = 0
+        retbuf = self.consume_buffer(count)
 
         # then read the rest from the file
         if len(retbuf) < count:
@@ -170,12 +188,31 @@ class ValveFile:
 
         return self.file.tell() - self.filled
 
-    def seek(self, target, whence=0):
+    def seek(self, target, whence=0) -> int:
         if whence == os.SEEK_CUR:
-            target -= self.filled
-        # could be more efficient and reuse potential existing buffer but it doesn't matter much
-        self.filled = 0
-        self.file.seek(target, whence)
+            if target < 0:
+                # if seeking backwards, dump buffer
+                # keep the real file pointer in sync
+                target -= self.filled
+                self.filled = 0
+            else:
+                diff : int = self.filled - target
+                if diff < 0:
+                    # if seeking forwards would consume the entire buffer, just dump it
+                    self.filled = 0
+                    # keep the real file pointer in sync
+                    target = -diff
+                else:
+                    # if seeking forwards only consumes part of the buffer, avoid the seek
+                    self.consume_buffer(target, dispose=True)
+        else:
+            # otherwise, dump the whole buffer on absolute seeks
+            self.filled = 0
+
+        if self.filled == 0:
+            return self.file.seek(target, whence)
+        
+        return self.tell()
 
     def close(self):
         if self.file is not None:
@@ -226,10 +263,19 @@ class GMAEntry:
     size : int
     crc : int
 
-    map_re = re.compile(".+\\.bsp$")
+    def as_mappath(name : str) -> pathlib.PurPath | None:
+        path : pathlib.PurePath = pathlib.PurePath(name.lower())
+        # for some reason path.parent needs to be cast to a str for comparison
+        if str(path.parent) == 'maps' and path.suffix == '.bsp':
+            return path
+        return None
 
-    def is_map(self):
-        return self.map_re.match(self.name)
+    def as_thumbpath(name : str) -> pathlib.PurPath | None:
+        path : pathlib.PurePath = pathlib.PurePath(name.lower())
+        # for some reason path.parent needs to be cast to a str for comparison
+        if str(path.parent) == 'maps/thumb':
+            return path
+        return None
 
     def __str__(self):
         return f"Name: {self.name}  Size: {human_readable_size(self.size)}"
@@ -262,7 +308,8 @@ class GMAFile(ValveFile):
         self.path = path
 
         self.files = []
-        self.maps = []
+        self.maps = {}
+        self.thumbs = []
 
         self.workshop_id = int(path.parent.name)
 
@@ -314,8 +361,12 @@ class GMAFile(ValveFile):
             size, crc = self.GMA_FILE_ENT.unpack(self.read(self.GMA_FILE_ENT.size))
             entry = GMAEntry(filenum, name, filepos, size, crc)
             self.files.append(entry)
-            if entry.is_map():
-                self.maps.append(entry)
+            mappath : pathlib.PurePath | None = GMAEntry.as_mappath(entry.name)
+            if mappath is not None:
+                self.maps[mappath] = None
+            thumbpath : pathlib.PurePath | None = GMAEntry.as_thumbpath(entry.name)
+            if thumbpath is not None:
+                self.thumbs.append(thumbpath)
             filenum += 1
             filepos += size
 
@@ -324,7 +375,7 @@ class GMAFile(ValveFile):
 
         self.close()
 
-    def read_file_data(self, maxread=-1):
+    def read_file_data(self, maxread=-1, reading : bool = True):
         if self.filepos < 0:
             if self.filenum == len(self.files):
                 return None
@@ -335,40 +386,83 @@ class GMAFile(ValveFile):
         if maxread >= 0 and maxread < to_read:
             to_read = maxread
 
-        ret = self.read(to_read)
-        self.filepos += len(ret)
+        have_read : int = to_read
+        if reading:
+            ret = self.read(to_read)
+            have_read = len(ret)
+        else:
+            # if not reading, just skip over
+            self.seek(to_read, os.SEEK_CUR)
+            ret = b''
+
+        self.filepos += have_read
         if self.filepos == self.files[self.filenum].size:
             self.filenum += 1
             self.filepos = -1
 
         return ret
 
-    def read_all_data(self, new_file_cb, data_cb, end_file_cb, priv):
+    def read_all_data(self, dumpstate : DumpGMAFileState):
         self.reopen()
 
         # open an initial file
         data = self.read_file_data(READ_SIZE)
-        if not new_file_cb(priv, data):
+        if not dumpstate.new_file_cb(data):
             return
 
         while True:
             data = self.read_file_data(READ_SIZE)
             if data is None:
-                end_file_cb(priv)
+                dumpstate.end_file_cb()
                 break
             elif isinstance(data, str):
-                if not end_file_cb(priv):
+                if not dumpstate.end_file_cb():
                     break
-                if not new_file_cb(priv, data):
+                if not dumpstate.new_file_cb(data):
                     break
             else:
-                if not data_cb(priv, data):
+                if not dumpstate.data_cb(data):
                     break
 
-    def mapnames(self):
+    def read_file_set(self, file_set : list[pathlib.PurePath], dumpstate : DumpGMAFileState):
+        self.reopen()
+
+        reading : bool = False
+
+        # open an initial file
+        data = self.read_file_data(READ_SIZE)
+        if pathlib.PurePath(data) in file_set:
+            reading = True
+            if not dumpstate.new_file_cb(data):
+                return
+
+        while True:
+            data = self.read_file_data(READ_SIZE, reading)
+            if data is None:
+                if reading:
+                    dumpstate.end_file_cb()
+                break
+            elif isinstance(data, str):
+                if reading:
+                    if not dumpstate.end_file_cb():
+                        break
+                if pathlib.PurePath(data) in file_set:
+                    reading = True
+                    if not dumpstate.new_file_cb(data):
+                        break
+                else:
+                    reading = False
+            else:
+                if reading:
+                    if not dumpstate.data_cb(data):
+                        break
+
+    def mapnames(self) -> str:
         maps = ""
-        for gmap in self.maps:
-            maps += f" {gmap.name}\n"
+        for gmap in self.maps.keys():
+            if self.maps[gmap] is not None:
+                maps += self.maps[gmap]
+            maps += f" {gmap.stem}\n"
         return maps
 
     def get_url(self):
@@ -615,32 +709,99 @@ def _get_gma_infos(path, do_only=[]):
     return gmas
 
 @dataclass
-class DumpFileState():
+class DumpGMAFileState():
     path : pathlib.Path
     file : io.BufferedWriter | None
+    do_dump : bool
+    maps : dict[pathlib.PurePath, str | None] | None
+    thumbs : dict[pathlib.PurePath, pathlib.PurePath] | None
+    current_name : pathlib.PurePath | None
+    current_data : bytes
 
-    def __init__(self, path : pathlib.PurePath):
+    def __init__(self, path : pathlib.PurePath,
+                       do_dump : bool,
+                       maps : dict[pathlib.PurePath, str | None] | None,
+                       thumbs : list[pathlib.PurePath] | None):
         self.path = path
         self.file = None
+        self.do_dump = do_dump
+        self.thumbs = None
+        if maps is not None and thumbs is not None:
+            self.maps = maps
+            self.thumbs = {}
+            for mappath in self.maps.keys():
+                for thumb in thumbs:
+                    if mappath.stem == thumb.stem:
+                        self.thumbs[thumb] = mappath
+        self.current_name = None
+        self.current_data = b''
 
-def dump_new_file_cb(priv, name):
-    extract_path = pathlib.Path(priv.path.parent.name, pathlib.Path(name))
-    extract_path.parent.mkdir(parents=True, exist_ok=True)
-    priv.file = extract_path.open('wb')
+    def new_file_cb(self, name):
+        if do_dump:
+            extract_path = pathlib.Path(self.path.parent.name, pathlib.Path(name))
+            extract_path.parent.mkdir(parents=True, exist_ok=True)
+            self.file = extract_path.open('wb')
 
-    return True
+        if self.thumbs is not None and len(self.thumbs) > 0:
+            path : pathlib.PurePath | None = GMAEntry.as_thumbpath(name)
+            if path is not None and path in self.thumbs:
+                self.current_name = path
 
-def dump_data_cb(priv, data):
-    priv.file.write(data)
+        return True
 
-    return True
+    def data_cb(self, data):
+        if do_dump:
+            self.file.write(data)
 
-def dump_end_file_cb(priv):
-    priv.file.close()
+        if self.current_name is not None:
+            self.current_data += data
 
-    return True
+        return True
 
-def get_gma_infos(path, do_list=False, do_dump=False, do_json=False, do_only=[], sort_list=[]):
+    def end_file_cb(self):
+        if do_dump:
+            self.file.close()
+
+        if self.current_name is not None:
+            try:
+                image : Image = Image.open(io.BytesIO(self.current_data))
+            except UnidentifiedImageError:
+                self.current_name = None
+                self.current_data = b''
+                log_print(f"WARNING: Couldn't load image in thumbnails {self.current_name}.")
+
+                return True
+
+            width : int = math.ceil(THUMB_WIDTH / 2) * 2
+            height : int = math.ceil(image.height / image.width * THUMB_WIDTH / 4) * 4
+            image = image.resize((width, height))
+            thumbdata = ""
+            for y in range(height // 4):
+                for x in range(width // 2):
+                    cell_img = image.crop((x * 2, y * 4, x * 2 + 2, y * 4 + 4)).quantize(2)
+                    pal = cell_img.getpalette()
+                    data = cell_img.get_flattened_data()
+                    if len(pal) < 6:
+                        thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[0]};{pal[1]};{pal[2]}m"
+                    else:
+                        thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[3]};{pal[4]};{pal[5]}m"
+                    cell_idx : int = (data[1] * 16) + \
+                                      data[0] + \
+                                     (data[3] * 32) + \
+                                     (data[2] * 2) + \
+                                     (data[5] * 64) + \
+                                     (data[4] * 4) + \
+                                     (data[7] * 128) + \
+                                     (data[6] * 8)
+                    thumbdata += CHARS4[cell_idx]
+                thumbdata += "\x1b[m\n"
+            self.maps[self.thumbs[self.current_name]] = thumbdata
+            self.current_name = None
+            self.current_data = b''
+
+        return True
+
+def get_gma_infos(path, do_list=False, do_dump=False, do_json=False, do_thumbs=False, do_only=[], sort_list=[]):
     # ugh big ugly do everything function
 
     gma_paths = _get_gma_infos(path, do_only)
@@ -653,9 +814,18 @@ def get_gma_infos(path, do_list=False, do_dump=False, do_json=False, do_only=[],
 
         gma = GMAFile(path[1], compressed)
 
-        if do_dump:
-            priv = DumpFileState(path[1])
-            gma.read_all_data(dump_new_file_cb, dump_data_cb, dump_end_file_cb, priv)
+        if do_dump or do_thumbs:
+            maps = None
+            thumbs = None
+            if do_thumbs:
+                maps = gma.maps
+                thumbs = gma.thumbs
+            dumpstate = DumpGMAFileState(path[1], do_dump, maps, thumbs)
+
+            if do_dump:
+                gma.read_all_data(dumpstate)
+            else:
+                gma.read_file_set(thumbs, dumpstate)
 
         gma.close()
 
@@ -984,7 +1154,7 @@ def make_sort_list(sort_list_string):
 
 def usage(app):
     print(f"USAGE: {app} [--list | --sort[=]<criteria[,criteria,...]> | --dump | --steampath[=]<path to steam> | <workshop ID>]...\n"
-          f"       {app} --collisions-scan [--steampath[=]<path to steam> | --threads[=]<number of threads>]...")
+          f"       {app} --collisions-scan [--steampath[=]<path to steam> | --threads[=]<number of threads>]... | --thumbs")
     print("\nSort criterias:\n")
     for sort in GMAFile.SORTS.keys():
         print(f"{sort} : {GMAFile.SORTS[sort][0]}")
@@ -996,6 +1166,7 @@ if __name__ == '__main__':
     do_list = False
     do_dump = False
     do_json = False
+    do_thumbs = False
     do_only = []
     sort_list = []
     path = pathlib.Path.home().joinpath(DEFAULT_STEAM_PATH)
@@ -1028,6 +1199,11 @@ if __name__ == '__main__':
             elif len(argv) > 1 and arg == 'threads':
                 threads = int(argv[1])
                 argv = argv[1:]
+            elif arg == 'thumbs':
+                if Image is None:
+                    print("Thumbs requested but pillow not installed.")
+                    do_usage = True
+                do_thumbs = True
             else:
                 do_usage = True
                 break
@@ -1045,4 +1221,4 @@ if __name__ == '__main__':
     elif do_collisions:
         collisions_scan(path, do_only, threads)
     else:
-        get_gma_infos(path, do_list, do_dump, do_json, do_only, sort_list)
+        get_gma_infos(path, do_list, do_dump, do_json, do_thumbs, do_only, sort_list)
