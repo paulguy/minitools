@@ -324,6 +324,23 @@ gmod_map_list.py
    probably diminishing returns from there unless maybe you have a very fast
    SSD, but I suspect most of the slowness is python itself.
 
+  --thumbs
+   Generate true color octant thumbnails for display in a terminal.  This
+   requires a terminal which can display octant characters correctly as well
+   as supports true color.  It also requires the pillow python package.  This
+   is fairly inefficient as it has to extract the thumbnails from each GMA as
+   well as convert them for display.  An optional width can be added, default
+   is 64.
+
+  --ranges
+   Ranges are a comma separated list of single integers or a 2 integers
+   separated by a : for a span of items, a value can be omitted on the left
+   side to indicate starting with the first item or on the right side to
+   indicate ending with the last item.  Any value can be negative to indicate
+   an item some items from the last.  This is similar (though less powerful)
+   than python range syntax, differing in that the last value is inclusive.
+
+
 dn1gfx.py
   USAGE: ./dn1gfx.py <filename>
 

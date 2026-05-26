@@ -15,6 +15,7 @@ import lzma
 import hashlib
 import threading
 import math
+from typing import Callable
 
 try:
     from PIL import Image, UnidentifiedImageError
@@ -457,14 +458,6 @@ class GMAFile(ValveFile):
                     if not dumpstate.data_cb(data):
                         break
 
-    def mapnames(self) -> str:
-        maps = ""
-        for gmap in self.maps.keys():
-            if self.maps[gmap] is not None:
-                maps += self.maps[gmap]
-            maps += f" {gmap.stem}\n"
-        return maps
-
     def get_url(self):
         return f"https://steamcommunity.com/sharedfiles/filedetails/?id={self.workshop_id}"
 
@@ -482,7 +475,6 @@ class GMAFile(ValveFile):
         files = ""
         for file in self.files:
             files += f" {file}\n"
-        maps = self.mapnames()
         return f"Workshop ID: {self.workshop_id}\n" \
                f"URL: {self.get_url()}\n" \
                f"Size: {human_readable_size(self.size)}\n" \
@@ -492,7 +484,7 @@ class GMAFile(ValveFile):
                f"Author: {self.author}\nType: {self.type}\n" \
                f"Tags: {tags}\nDescription: {self.description}\n" \
                f"Addon Version (unused?): {self.addon_ver}\n" \
-               f"Files:\n{files}\nMaps:\n{maps}"
+               f"Files:\n{files}"
 
     def get_dict(self):
         return {'workshop_id': self.workshop_id,
@@ -763,46 +755,147 @@ class DumpGMAFileState():
             self.file.close()
 
         if self.current_name is not None:
-            try:
-                image : Image = Image.open(io.BytesIO(self.current_data))
-            except UnidentifiedImageError:
-                self.current_name = None
-                self.current_data = b''
-                log_print(f"WARNING: Couldn't load image in thumbnails {self.current_name}.")
-
-                return True
-
-            width : int = math.ceil(THUMB_WIDTH / 2) * 2
-            height : int = math.ceil(image.height / image.width * THUMB_WIDTH / 4) * 4
-            image = image.resize((width, height))
-            thumbdata = ""
-            for y in range(height // 4):
-                for x in range(width // 2):
-                    cell_img = image.crop((x * 2, y * 4, x * 2 + 2, y * 4 + 4)).quantize(2)
-                    pal = cell_img.getpalette()
-                    data = cell_img.get_flattened_data()
-                    if len(pal) < 6:
-                        thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[0]};{pal[1]};{pal[2]}m"
-                    else:
-                        thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[3]};{pal[4]};{pal[5]}m"
-                    cell_idx : int = (data[1] * 16) + \
-                                      data[0] + \
-                                     (data[3] * 32) + \
-                                     (data[2] * 2) + \
-                                     (data[5] * 64) + \
-                                     (data[4] * 4) + \
-                                     (data[7] * 128) + \
-                                     (data[6] * 8)
-                    thumbdata += CHARS4[cell_idx]
-                thumbdata += "\x1b[m\n"
-            self.maps[self.thumbs[self.current_name]] = thumbdata
+            self.maps[self.thumbs[self.current_name]] = self.current_data
+            if not do_dump:
+                # if not dumping and all thumbnails are extracted, stop extracting.
+                all_none = True
+                for gmap in self.maps.keys():
+                    if self.maps[gmap] is None:
+                        all_none = False
+                        break
+                if all_none:
+                    return False
             self.current_name = None
             self.current_data = b''
 
         return True
 
-def get_gma_infos(path, do_list=False, do_dump=False, do_json=False, do_thumbs=False, do_only=[], sort_list=[]):
+def image_to_octants(data : bytes, thumb_width : int) -> str | None:
+    try:
+        image : Image = Image.open(io.BytesIO(data))
+    except UnidentifiedImageError:
+        log_print(f"WARNING: Couldn't load image in thumbnails {self.current_name}.")
+
+        return None
+
+    width : int = math.ceil(thumb_width / 2) * 2
+    height : int = math.ceil(image.height / image.width * width / 4) * 4
+    image = image.resize((width, height))
+    thumbdata = ""
+    for y in range(height // 4):
+        for x in range(width // 2):
+            cell_img = image.crop((x * 2, y * 4, x * 2 + 2, y * 4 + 4)).quantize(2)
+            pal = cell_img.getpalette()
+            data = cell_img.get_flattened_data()
+            if len(pal) < 6:
+                thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[0]};{pal[1]};{pal[2]}m"
+            else:
+                thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[3]};{pal[4]};{pal[5]}m"
+            cell_idx : int = (data[1] * 16) + \
+                              data[0] + \
+                             (data[3] * 32) + \
+                             (data[2] * 2) + \
+                             (data[5] * 64) + \
+                             (data[4] * 4) + \
+                             (data[7] * 128) + \
+                             (data[6] * 8)
+            thumbdata += CHARS4[cell_idx]
+        thumbdata += "\x1b[m\n"
+    
+    return thumbdata
+
+def print_maps(gma : GMAFile, thumb_width : int):
+    if len(gma.maps) > 0:
+        print(f"Maps:")
+        for i, gmap in enumerate(gma.maps.keys()):
+            if thumb_width > 0:
+                if gma.maps[gmap] is not None:
+                    if i > 0:
+                        print()
+                    print(image_to_octants(gma.maps[gmap], thumb_width), end='')
+            print(f" {gmap.stem}")
+
+class RangeIterator:
+    def parse_number(num : str, last : int) -> int:
+        try:
+            val = int(num)
+        except ValueError:
+            raise ValueError(f"Item {num} must be an integer.")
+        if val < 0:
+            # make negative values start from the last value
+            val += last
+        if val < 0 or val >= last:
+            raise IndexError(f"Index {num} out of range.")
+
+        return val
+
+    def __init__(self, ranges : str | None, last : int):
+        self.blocks = []
+        self.num = -1
+
+        if ranges is None:
+            self.blocks.append((0, last - 1))
+        else:
+            blocks = ranges.split(',')
+            for block in blocks:
+                colon = -1
+                try:
+                    colon = block.index(':')
+                except ValueError:
+                    pass
+                if colon < 0:
+                    self.blocks.append(RangeIterator.parse_number(block, last))
+                else:
+                    first = 0
+                    if colon > 0:
+                        first = RangeIterator.parse_number(block[:colon], last)
+                    second = last - 1
+                    if colon < len(block) - 1:
+                        second = RangeIterator.parse_number(block[colon+1:], last)
+                    if first >= second:
+                        raise ValueError("Second value in a range must be later in succession than the first.")
+                    self.blocks.append((first, second))
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if len(self.blocks) == 0:
+            raise StopIteration
+
+        if isinstance(self.blocks[0], int):
+            # if item is an integer, remove it and return it
+            val = self.blocks[0]
+            self.blocks = self.blocks[1:]
+            return val
+
+        if self.num < 0:
+            # if item is a tuple, and number is negative, set it to the first value in this range
+            self.num = self.blocks[0][0]
+            return self.num
+        elif self.num == self.blocks[0][1] - 1:
+            # if the number is one less than the last value, remove the item, save the last value, mark num as unset and return the last value
+            self.blocks = self.blocks[1:]
+            val = self.num + 1
+            self.num = -1
+            return val
+
+        # otherwise, increment the number and return it
+        self.num += 1
+
+        return self.num
+
+
+def get_gma_infos(path : pathlib.Path,
+                  do_list : bool,
+                  do_dump : bool,
+                  do_json : bool,
+                  thumb_width : int,
+                  do_only : list[int],
+                  sort_list : list[tuple[str, Callable[GMAFile]]],
+                  ranges : str):
     # ugh big ugly do everything function
+    do_thumbs = thumb_width > 0
 
     gma_paths = _get_gma_infos(path, do_only)
     gmas = []
@@ -817,6 +910,7 @@ def get_gma_infos(path, do_list=False, do_dump=False, do_json=False, do_thumbs=F
         if do_dump or do_thumbs:
             maps = None
             thumbs = None
+            # TODO: move thumbnail extraction until the end so only the needed ones get extracted
             if do_thumbs:
                 maps = gma.maps
                 thumbs = gma.thumbs
@@ -838,14 +932,21 @@ def get_gma_infos(path, do_list=False, do_dump=False, do_json=False, do_thumbs=F
         gmadicts = [gma.get_dict() for gma in gmas]
         print(json.dumps(gmadicts))
     else:
-        for gma in gmas:
+        r = RangeIterator(':', len(gmas))
+        try:
+            r = RangeIterator(ranges, len(gmas))
+        except Exception as e:
+            log_print(f"WARNING: Bad range: {ranges} : {e}, ignoring...")
+        for i in RangeIterator(ranges, len(gmas)):
+            gma = gmas[i]
+            print(i, end=' ')
             if do_list:
                 print(f"{gma.workshop_id} {gma.name} {human_readable_size(gma.size)}")
-                maps = gma.mapnames()
-                if len(maps) > 0:
-                    print(f"Maps:\n{maps}")
+                print_maps(gma, thumb_width)
             else:
                 print(gma)
+                print_maps(gma, thumb_width)
+            print()
 
 class SteamDepot:
     def __init__(self,
@@ -1154,7 +1255,8 @@ def make_sort_list(sort_list_string):
 
 def usage(app):
     print(f"USAGE: {app} [--list | --sort[=]<criteria[,criteria,...]> | --dump | --steampath[=]<path to steam> | <workshop ID>]...\n"
-          f"       {app} --collisions-scan [--steampath[=]<path to steam> | --threads[=]<number of threads>]... | --thumbs")
+          "           --collisions-scan [--steampath[=]<path to steam> | --threads[=]<number of threads>]... | --thumbs[[=]<width>]\n"
+          "           --ranges[=]<range[,range,...]")
     print("\nSort criterias:\n")
     for sort in GMAFile.SORTS.keys():
         print(f"{sort} : {GMAFile.SORTS[sort][0]}")
@@ -1166,11 +1268,12 @@ if __name__ == '__main__':
     do_list = False
     do_dump = False
     do_json = False
-    do_thumbs = False
+    thumb_width = -1
     do_only = []
     sort_list = []
     path = pathlib.Path.home().joinpath(DEFAULT_STEAM_PATH)
     threads = 1
+    ranges = None
 
     # ultra simple args parsing
     while len(argv) > 0:
@@ -1198,12 +1301,34 @@ if __name__ == '__main__':
                 threads = int(arg[8:])
             elif len(argv) > 1 and arg == 'threads':
                 threads = int(argv[1])
+                if threads < 1:
+                    print("Threads must be greater than 0.")
+                    do_usage = True
                 argv = argv[1:]
             elif arg == 'thumbs':
                 if Image is None:
-                    print("Thumbs requested but pillow not installed.")
+                    print("Thumbnails requested but pillow not installed.")
                     do_usage = True
-                do_thumbs = True
+                thumb_width = THUMB_WIDTH
+                if len(argv) > 1:
+                    try:
+                        thumb_width = int(argv[1])
+                        argv = argv[1:]
+                    except ValueError:
+                        pass
+                if thumb_width < 1:
+                    print("Thumbnails width must be greater than 0.")
+                    do_usage = True
+            elif arg.startswith('thumbs='):
+                thumb_width = int(arg[7:])
+                if thumb_width < 1:
+                    print("Thumbnails width must be greater than 0.")
+                    do_usage = True
+            elif arg == 'ranges':
+                ranges = argv[1]
+                argv = argv[1:]
+            elif arg.startswith('ranges='):
+                ranges = arg[7:]
             else:
                 do_usage = True
                 break
@@ -1221,4 +1346,4 @@ if __name__ == '__main__':
     elif do_collisions:
         collisions_scan(path, do_only, threads)
     else:
-        get_gma_infos(path, do_list, do_dump, do_json, do_thumbs, do_only, sort_list)
+        get_gma_infos(path, do_list, do_dump, do_json, thumb_width, do_only, sort_list, ranges)
