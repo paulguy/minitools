@@ -902,7 +902,6 @@ def get_gma_infos(path : pathlib.Path,
                   ranges : str):
     # ugh big ugly do everything function
     do_thumbs = thumb_width > 0
-    print(do_thumbs)
 
     gma_paths = _get_gma_infos(path, do_only)
     gmas = []
@@ -1339,7 +1338,6 @@ if __name__ == '__main__':
                     print("Thumbnails width must be greater than 0.")
                     do_usage = True
                     break
-                print(thumb_width)
             elif arg.startswith('thumbs='):
                 thumb_width = int(arg[7:])
                 if thumb_width < 1:
