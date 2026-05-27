@@ -834,7 +834,10 @@ class RangeIterator:
         self.num = -1
 
         if ranges is None:
-            self.blocks.append((0, last - 1))
+            if last == 1:
+                self.blocks.append(0)
+            else:
+                self.blocks.append((0, last - 1))
         else:
             blocks = ranges.split(',')
             for block in blocks:
@@ -852,9 +855,12 @@ class RangeIterator:
                     second = last - 1
                     if colon < len(block) - 1:
                         second = RangeIterator.parse_number(block[colon+1:], last)
-                    if first >= second:
-                        raise ValueError("Second value in a range must be later in succession than the first.")
-                    self.blocks.append((first, second))
+                    if first == second:
+                        self.blocks.append(first)
+                    else:
+                        if first > second:
+                            raise ValueError("Second value in a range must be later in succession than the first.")
+                        self.blocks.append((first, second))
 
     def __iter__(self):
         return self
@@ -896,6 +902,7 @@ def get_gma_infos(path : pathlib.Path,
                   ranges : str):
     # ugh big ugly do everything function
     do_thumbs = thumb_width > 0
+    print(do_thumbs)
 
     gma_paths = _get_gma_infos(path, do_only)
     gmas = []
@@ -1299,31 +1306,46 @@ if __name__ == '__main__':
                 argv = argv[1:]
             elif arg.startswith('threads='):
                 threads = int(arg[8:])
+                if threads < 1:
+                    print("Threads must be greater than 0.")
+                    do_usage = True
+                    break
             elif len(argv) > 1 and arg == 'threads':
                 threads = int(argv[1])
                 if threads < 1:
                     print("Threads must be greater than 0.")
                     do_usage = True
+                    break
                 argv = argv[1:]
             elif arg == 'thumbs':
                 if Image is None:
                     print("Thumbnails requested but pillow not installed.")
                     do_usage = True
+                    break
                 thumb_width = THUMB_WIDTH
                 if len(argv) > 1:
                     try:
                         thumb_width = int(argv[1])
-                        argv = argv[1:]
+                        if thumb_width > 512:
+                            # filter out values that are larger than the thumbnail size and larger than a reasonable size
+                            # in case a workshop item is added.  Workshop IDs are global to the entirety of steam so i don't
+                            # think gmod even has any IDs this low.  Would be curious to know though!
+                            thumb_width = THUMB_WIDTH
+                        else:
+                            argv = argv[1:]
                     except ValueError:
                         pass
                 if thumb_width < 1:
                     print("Thumbnails width must be greater than 0.")
                     do_usage = True
+                    break
+                print(thumb_width)
             elif arg.startswith('thumbs='):
                 thumb_width = int(arg[7:])
                 if thumb_width < 1:
                     print("Thumbnails width must be greater than 0.")
                     do_usage = True
+                    break
             elif arg == 'ranges':
                 ranges = argv[1]
                 argv = argv[1:]
