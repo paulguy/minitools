@@ -771,6 +771,9 @@ class DumpGMAFileState():
         return True
 
 def image_to_octants(data : bytes, thumb_width : int) -> str | None:
+    error_r : float = 0.0
+    error_g : float = 0.0
+    error_b : float = 0.0
     try:
         image : Image = Image.open(io.BytesIO(data))
     except UnidentifiedImageError:
@@ -781,25 +784,131 @@ def image_to_octants(data : bytes, thumb_width : int) -> str | None:
     width : int = math.ceil(thumb_width / 2) * 2
     height : int = math.ceil(image.height / image.width * width / 4) * 4
     image = image.resize((width, height))
+    imgdata = image.get_flattened_data()
     thumbdata = ""
-    for y in range(height // 4):
-        for x in range(width // 2):
-            cell_img = image.crop((x * 2, y * 4, x * 2 + 2, y * 4 + 4)).quantize(2)
+    for y in range(0, height, 4):
+        for x in range(0, width, 2):
+            cell_img = image.crop((x, y, x + 2, y + 4)).quantize(2)
             pal = cell_img.getpalette()
             data = cell_img.get_flattened_data()
+            r0 = pal[0]
+            g0 = pal[1]
+            b0 = pal[2]
             if len(pal) < 6:
-                thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[0]};{pal[1]};{pal[2]}m"
+                r1 = pal[0]
+                g1 = pal[1]
+                b1 = pal[2]
+                thumbdata += f"\x1b[48;2;{r0};{g0};{b0}m█"
             else:
-                thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[3]};{pal[4]};{pal[5]}m"
-            cell_idx : int = (data[1] * 16) + \
-                              data[0] + \
-                             (data[3] * 32) + \
-                             (data[2] * 2) + \
-                             (data[5] * 64) + \
-                             (data[4] * 4) + \
-                             (data[7] * 128) + \
-                             (data[6] * 8)
-            thumbdata += CHARS4[cell_idx]
+                r1 = pal[3]
+                g1 = pal[4]
+                b1 = pal[5]
+                cell_idx : int = (data[1] * 16) + \
+                                  data[0] + \
+                                 (data[3] * 32) + \
+                                 (data[2] * 2) + \
+                                 (data[5] * 64) + \
+                                 (data[4] * 4) + \
+                                 (data[7] * 128) + \
+                                 (data[6] * 8)
+                thumbdata += f"\x1b[48;2;{r0};{g0};{b0}m\x1b[38;2;{r1};{g1};{b1}m"
+                thumbdata += CHARS4[cell_idx]
+            # calculate error for each border pixel and diffuse it in to neighboring cells
+            if x + 2 < width:
+                pixel = imgdata[width * y + x + 1]
+                error_r = (pal[data[1] * 3] / 255.0) - (pixel[0] / 255.0)
+                error_g = (pal[data[1] * 3 + 1] / 255.0) - (pixel[1] / 255.0)
+                error_b = (pal[data[1] * 3 + 2] / 255.0) - (pixel[2] / 255.0)
+                pixel = imgdata[width * y + x + 2]
+                image.putpixel((x+2, y), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 3.0 * 2.0)))) * 255.0),
+                                          int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 3.0 * 2.0)))) * 255.0),
+                                          int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 3.0 * 2.0)))) * 255.0)))
+                pixel = imgdata[width * (y + 1) + x + 2]
+                image.putpixel((x+2, y+1), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 3.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 3.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 3.0)))) * 255.0)))
+
+                pixel = imgdata[width * (y + 1) + x + 1]
+                error_r = (pal[data[3] * 3] / 255.0) - (pixel[0] / 255.0)
+                error_g = (pal[data[3] * 3 + 1] / 255.0) - (pixel[1] / 255.0)
+                error_b = (pal[data[3] * 3 + 2] / 255.0) - (pixel[2] / 255.0)
+                pixel = imgdata[width * y + x + 2]
+                image.putpixel((x+2, y), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 4.0)))) * 255.0),
+                                          int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 4.0)))) * 255.0),
+                                          int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 4.0)))) * 255.0)))
+                pixel = imgdata[width * (y + 1) + x + 2]
+                image.putpixel((x+2, y+1), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 2.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 2.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 2.0)))) * 255.0)))
+                pixel = imgdata[width * (y + 2) + x + 2]
+                image.putpixel((x+2, y+2), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 4.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 4.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 4.0)))) * 255.0)))
+
+                pixel = imgdata[width * (y + 2) + x + 1]
+                error_r = (pal[data[5] * 3] / 255.0) - (pixel[0] / 255.0)
+                error_g = (pal[data[5] * 3 + 1] / 255.0) - (pixel[1] / 255.0)
+                error_b = (pal[data[5] * 3 + 2] / 255.0) - (pixel[2] / 255.0)
+                pixel = imgdata[width * (y + 1) + x + 2]
+                image.putpixel((x+2, y+1), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 4.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 4.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 4.0)))) * 255.0)))
+                pixel = imgdata[width * (y + 2) + x + 2]
+                image.putpixel((x+2, y+2), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 2.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 2.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 2.0)))) * 255.0)))
+                pixel = imgdata[width * (y + 3) + x + 2]
+                image.putpixel((x+2, y+3), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 4.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 4.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 4.0)))) * 255.0)))
+
+            pixel = imgdata[width * (y + 3) + x]
+            error_r = (pal[data[6] * 3] / 255.0) - (pixel[0] / 255.0)
+            error_g = (pal[data[6] * 3 + 1] / 255.0) - (pixel[1] / 255.0)
+            error_b = (pal[data[6] * 3 + 2] / 255.0) - (pixel[2] / 255.0)
+            if x + 2 < width:
+                pixel = imgdata[width * (y + 2) + x + 2]
+                image.putpixel((x+2, y+2), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 7.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 7.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 7.0)))) * 255.0)))
+                pixel = imgdata[width * (y + 3) + x + 2]
+                image.putpixel((x+2, y+3), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 7.0 * 2.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 7.0 * 2.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 7.0 * 2.0)))) * 255.0)))
+            if y + 4 < height:
+                pixel = imgdata[width * (y + 4) + x]
+                image.putpixel((x, y+4), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 7.0)))) * 255.0),
+                                          int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 7.0)))) * 255.0),
+                                          int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 7.0)))) * 255.0)))
+                pixel = imgdata[width * (y + 4) + x + 1]
+                image.putpixel((x+1, y+4), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 7.0 * 2.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 7.0 * 2.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 7.0 * 2.0)))) * 255.0)))
+            if x + 2 < width and y + 4 < height:
+                pixel = imgdata[width * (y + 4) + x + 2]
+                image.putpixel((x+2, y+4), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 7.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 7.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 7.0)))) * 255.0)))
+ 
+            if y + 4 < height:
+                pixel = imgdata[width * (y + 3) + x + 1]
+                error_r = (pal[data[7] * 3] / 255.0) - (pixel[0] / 255.0)
+                error_g = (pal[data[7] * 3 + 1] / 255.0) - (pixel[1] / 255.0)
+                error_b = (pal[data[7] * 3 + 2] / 255.0) - (pixel[2] / 255.0)
+                if x > 0:
+                    pixel = imgdata[width * (y + 4) + x - 1]
+                    image.putpixel((x-1, y+4), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 4.0)))) * 255.0),
+                                                int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 4.0)))) * 255.0),
+                                                int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 4.0)))) * 255.0)))
+                pixel = imgdata[width * (y + 4) + x]
+                image.putpixel((x, y+4), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 2.0)))) * 255.0),
+                                          int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 2.0)))) * 255.0),
+                                          int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 2.0)))) * 255.0)))
+                pixel = imgdata[width * (y + 4) + x + 1]
+                image.putpixel((x+1, y+4), (int(max(0.0, min(1.0, ((pixel[0] / 255.0) + (error_r / 4.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[1] / 255.0) + (error_g / 4.0)))) * 255.0),
+                                            int(max(0.0, min(1.0, ((pixel[2] / 255.0) + (error_b / 4.0)))) * 255.0)))
+
         thumbdata += "\x1b[m\n"
     
     return thumbdata
