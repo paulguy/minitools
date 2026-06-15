@@ -792,7 +792,7 @@ def image_to_octants(data : bytes, thumb_width : int) -> str | None:
             pal = cell_img.getpalette()
             data = cell_img.get_flattened_data()
             if len(pal) < 6:
-                thumbdata += f"\x1b[38;2;{pal[0]};{pal[1]};{pal[2]}m█"
+                thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m "
             else:
                 r1 = pal[3]
                 g1 = pal[4]
