@@ -783,7 +783,7 @@ def image_to_octants(data : bytes, thumb_width : int) -> str | None:
 
     width : int = math.ceil(thumb_width / 2) * 2
     height : int = math.ceil(image.height / image.width * width / 4) * 4
-    image = image.resize((width, height))
+    image = image.convert('RGB').resize((width, height))
     imgdata = image.get_flattened_data()
     thumbdata = ""
     for y in range(0, height, 4):
@@ -795,9 +795,6 @@ def image_to_octants(data : bytes, thumb_width : int) -> str | None:
             g0 = pal[1]
             b0 = pal[2]
             if len(pal) < 6:
-                r1 = pal[0]
-                g1 = pal[1]
-                b1 = pal[2]
                 thumbdata += f"\x1b[48;2;{r0};{g0};{b0}m█"
             else:
                 r1 = pal[3]
