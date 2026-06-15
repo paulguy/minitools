@@ -787,26 +787,29 @@ def image_to_octants(data : bytes, thumb_width : int) -> str | None:
     imgdata = image.get_flattened_data()
     thumbdata = ""
     for y in range(0, height, 4):
+        lastpal = (-1, -1, -1, -1, -1, -1)
         for x in range(0, width, 2):
             cell_img = image.crop((x, y, x + 2, y + 4)).quantize(2)
             pal = cell_img.getpalette()
             data = cell_img.get_flattened_data()
             if len(pal) < 6:
-                thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m "
+                if lastpal != pal:
+                    thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m "
+                else:
+                    thumbdata += " "
             else:
-                r1 = pal[3]
-                g1 = pal[4]
-                b1 = pal[5]
-                cell_idx : int = (data[1] * 16) + \
-                                  data[0] + \
-                                 (data[3] * 32) + \
-                                 (data[2] * 2) + \
-                                 (data[5] * 64) + \
-                                 (data[4] * 4) + \
-                                 (data[7] * 128) + \
-                                 (data[6] * 8)
-                thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[3]};{pal[4]};{pal[5]}m"
+                if lastpal != pal:
+                    cell_idx : int = (data[1] * 16) + \
+                                      data[0] + \
+                                     (data[3] * 32) + \
+                                     (data[2] * 2) + \
+                                     (data[5] * 64) + \
+                                     (data[4] * 4) + \
+                                     (data[7] * 128) + \
+                                     (data[6] * 8)
+                    thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[3]};{pal[4]};{pal[5]}m"
                 thumbdata += CHARS4[cell_idx]
+            lastpal = pal
             # calculate error for each border pixel and diffuse it in to neighboring cells
             if x + 2 < width:
                 pixel = imgdata[width * y + x + 1]
