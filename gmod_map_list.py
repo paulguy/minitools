@@ -791,11 +791,8 @@ def image_to_octants(data : bytes, thumb_width : int) -> str | None:
             cell_img = image.crop((x, y, x + 2, y + 4)).quantize(2)
             pal = cell_img.getpalette()
             data = cell_img.get_flattened_data()
-            r0 = pal[0]
-            g0 = pal[1]
-            b0 = pal[2]
             if len(pal) < 6:
-                thumbdata += f"\x1b[48;2;{r0};{g0};{b0}m█"
+                thumbdata += f"\x1b[38;2;{pal[0]};{pal[1]};{pal[2]}m█"
             else:
                 r1 = pal[3]
                 g1 = pal[4]
@@ -808,7 +805,7 @@ def image_to_octants(data : bytes, thumb_width : int) -> str | None:
                                  (data[4] * 4) + \
                                  (data[7] * 128) + \
                                  (data[6] * 8)
-                thumbdata += f"\x1b[48;2;{r0};{g0};{b0}m\x1b[38;2;{r1};{g1};{b1}m"
+                thumbdata += f"\x1b[48;2;{pal[0]};{pal[1]};{pal[2]}m\x1b[38;2;{pal[3]};{pal[4]};{pal[5]}m"
                 thumbdata += CHARS4[cell_idx]
             # calculate error for each border pixel and diffuse it in to neighboring cells
             if x + 2 < width:
