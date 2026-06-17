@@ -721,10 +721,15 @@ class DumpGMAFileState():
         if maps is not None and thumbs is not None:
             self.maps = maps
             self.thumbs = {}
-            for mappath in self.maps.keys():
-                for thumb in thumbs:
-                    if mappath.stem == thumb.stem:
-                        self.thumbs[thumb] = mappath
+            if len(maps) == 1 and len(thumbs) == 1:
+                # if there's only 1 thumb and 1 map, just assign them even if the names don't match
+                # I don't know if this is correct, but some are packaged this way
+                self.thumbs[thumbs[0]] = list(self.maps.keys())[0]
+            else:
+                for mappath in self.maps.keys():
+                    for thumb in thumbs:
+                        if mappath.stem == thumb.stem:
+                            self.thumbs[thumb] = mappath
         self.current_name = None
         self.current_data = b''
 
