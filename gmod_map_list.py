@@ -23,6 +23,7 @@ except ModuleNotFoundError:
     Image = None
 
 THUMB_WIDTH = 64
+fallback_encoding = 'cp1251' # Russian addons are probably most common.
 
 # relative to home
 DEFAULT_STEAM_PATH = pathlib.PurePath(".local", "share", "Steam")
@@ -78,6 +79,8 @@ CHARS4 = array.array('w', ' 𜺨𜴀▘𜴉𜴊🯦𜴍𜺣𜴶𜴹𜴺▖𜵅�
                           '𜺠𜵱𜵴𜵵𜶀𜶁𜶄𜶅▂𜶬𜶯𜶰𜶻𜶼𜶿𜷀𜵲𜵳𜵶𜵷𜶂𜶃𜶆𜶇𜶭𜶮𜶱𜶲𜶽𜶾𜷁𜷂𜵸𜵹𜵼𜵽𜶈𜶉𜶌𜶍𜶳𜶴𜶷𜶸𜷃𜷄𜷇𜷈𜵺𜵻𜵾𜵿𜶊𜶋𜶎𜶏𜶵𜶶𜶹𜶺𜷅𜷆𜷉𜷊'
                           '▗𜶐𜶓▚𜶜𜶝𜶠𜶡𜷋𜷌𜷏𜷐▄𜷛𜷞▙𜶑𜶒𜶔𜶕𜶞𜶟𜶢𜶣𜷍𜷎𜷑𜷒𜷜𜷝𜷟𜷠𜶖𜶗𜶙𜶚𜶤𜶥𜶨𜶩𜷓𜷔𜷗𜷘𜷡𜷢▆𜷤▐𜶘𜶛▜𜶦𜶧𜶪𜶫𜷕𜷖𜷙𜷚▟𜷣𜷥█')
 
+PATHSLASH = '\\' if isinstance(pathlib.Path(), pathlib.WindowsPath) else '/'
+
 @dataclass
 class FileHash():
     size : int
@@ -108,6 +111,24 @@ def human_readable_size(size : int):
         return f"{size}{SIZE_UNITS[thousands]}"
     else:
         return f"{size}.{thousandths}{SIZE_UNITS[thousands]}"
+
+def decode_string(buf : bytes) -> str:
+    try:
+        return buf.decode('utf-8')
+    except UnicodeDecodeError as e:
+        pass
+
+    try:
+        return buf.decode(fallback_encoding)
+    except UnicodeDecodeError as e:
+        pass
+
+    # most ugly fallback
+    return buf.decode('ascii', 'backslashreplace')
+
+def fix_slashes(filename : str) -> str:
+    # for Windows
+    return filename.replace('\\', '/') if PATHSLASH == '\\' else filename
 
 class ValveFile:
     # stuff for avoiding seeking for the LZMA decompressor
@@ -176,12 +197,7 @@ class ValveFile:
             self.buffer[:len(buf)] = array.array('B', buf)
             self.filled = len(buf)
 
-        try:
-            retbuf = retbuf.decode('utf-8')
-        except UnicodeDecodeError as e:
-            raise e
-
-        return retbuf
+        return decode_string(retbuf)
 
     def tell(self) -> int:
         if self.file is None:
@@ -358,7 +374,7 @@ class GMAFile(ValveFile):
             fakenum, = self.GMA_FAKE_NUM.unpack(self.read(self.GMA_FAKE_NUM.size))
             if fakenum == 0:
                 break
-            name = self.read_string()
+            name = fix_slashes(self.read_string())
             size, crc = self.GMA_FILE_ENT.unpack(self.read(self.GMA_FILE_ENT.size))
             entry = GMAEntry(filenum, name, filepos, size, crc)
             self.files.append(entry)
@@ -1460,6 +1476,11 @@ if __name__ == '__main__':
                 argv = argv[1:]
             elif arg.startswith('ranges='):
                 ranges = arg[7:]
+            elif arg == 'fallback-encoding':
+                fallback_encoding = argv[1]
+                argv = argv[1:]
+            elif arg.startswith('fallback-encoding='):
+                fallback_encoding = arg[18:]
             else:
                 do_usage = True
                 break

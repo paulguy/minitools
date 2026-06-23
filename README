@@ -340,6 +340,11 @@ gmod_map_list.py
    an item some items from the last.  This is similar (though less powerful)
    than python range syntax, differing in that the last value is inclusive.
 
+  --fallback-encoding
+   Specify a fallback encoding for decoding strings, including filenames for
+   when utf-8 isn't correct.  The default is cp1251 (Windows-1251) because
+   most foreign language addons are Russian and this is the exception I found
+   that needed this feature.
 
 dn1gfx.py
   USAGE: ./dn1gfx.py <filename>
