@@ -393,3 +393,7 @@ vmftool.py
 vmftool-test.py
   USAGE: ./vmftool-test.py
    Demo of using vmftool, will output a VMF file to stdout.
+
+workshop_log.py
+  Parse workshop_log.txt from Steam/logs and list all subscriptions,
+  unsubscriptions and presently subscribed addons, listed by AppID.
