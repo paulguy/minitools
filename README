@@ -396,4 +396,6 @@ vmftool-test.py
 
 workshop_log.py
   Parse workshop_log.txt from Steam/logs and list all subscriptions,
-  unsubscriptions and presently subscribed addons, listed by AppID.
+  unsubscriptions and presently subscribed addons, listed by AppID.  Times
+  with a asterisk (*) mean that the logs don't go back far enough so there is
+  only an unsubscription on record, so that's the time provided.
