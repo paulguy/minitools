@@ -399,3 +399,11 @@ workshop_log.py
   unsubscriptions and presently subscribed addons, listed by AppID.  Times
   with a asterisk (*) mean that the logs don't go back far enough so there is
   only an unsubscription on record, so that's the time provided.
+
+win-path-rename.py
+  Rename a bunch of files named as windows paths (literally named like
+  "path\to\file.ext") and put them in their intended directories/folders.
+  Very very simple, if you have some exotic filetypes like symlinks or device
+  nodes or whatever for whatever reason who knows what this may do, but it
+  relies on python pathlib mkdir and copy operations so it might just be
+  sensible.
