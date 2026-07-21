@@ -791,14 +791,14 @@ class DumpGMAFileState():
 
         return True
 
-def image_to_octants(data : bytes, thumb_width : int) -> str | None:
+def image_to_octants(name : str, data : bytes, thumb_width : int) -> str | None:
     error_r : float = 0.0
     error_g : float = 0.0
     error_b : float = 0.0
     try:
         image : Image = Image.open(io.BytesIO(data))
     except UnidentifiedImageError:
-        log_print(f"WARNING: Couldn't load image in thumbnails {self.current_name}.")
+        log_print(f"WARNING: Couldn't load thumbnail image for map {name}.")
 
         return None
 
@@ -939,7 +939,9 @@ def print_maps(gma : GMAFile, thumb_width : int):
                 if gma.maps[gmap] is not None:
                     if i > 0:
                         print()
-                    print(image_to_octants(gma.maps[gmap], thumb_width), end='')
+                    image = image_to_octants(gmap, gma.maps[gmap], thumb_width)
+                    if image is not None:
+                        print(image, end='')
             print(f" {gmap.stem}")
 
 class RangeIterator:
